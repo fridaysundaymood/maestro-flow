@@ -6,7 +6,7 @@ import { createResult, loadConfig, newRunId, runArtifactDir, writeArtifactIndex,
 import { buildIndex, type ResourceIndex } from './indexer.js';
 import { lintFlow } from './lint.js';
 import { generateFlows, type Journey } from './generate.js';
-import { runFlow } from './run.js';
+import { runFlow, supportedMaestroVersion } from './run.js';
 
 export type Operation = 'index' | 'lint' | 'generate' | 'run' | 'doctor';
 export interface OperationInput {
@@ -78,7 +78,7 @@ async function performOperation(operation: Operation, input: OperationInput = {}
     }
     if (operation === 'lint') {
       const flow = resolvePath(root, required(input.flow ?? config.flow, 'flow'));
-      const lint = await lintFlow(flow, await readIndex(indexPath), { locale: (input.locale ?? config.locale)?.[0], rootScreens: config.rootScreens, suppressions: config.suppressions });
+      const lint = await lintFlow(flow, await readIndex(indexPath), { locale: (input.locale ?? config.locale)?.[0], rootScreens: config.rootScreens, suppressions: config.suppressions, maestroVersion: input.maestroVersion ?? config.maestroVersion });
       return result(lint.passed ? 'pass' : 'fail', lint.passed ? 'Flow lint passed' : 'Flow lint failed', lint.diagnostics, [], lint.passed ? undefined : 'test');
     }
     if (operation === 'generate') {
@@ -113,10 +113,9 @@ async function performOperation(operation: Operation, input: OperationInput = {}
     if (operation === 'doctor') {
       const checks = await Promise.all([version('java', ['-version']), version(input.adb ?? 'adb', ['version']), version(input.maestro ?? 'maestro', ['--version'])]);
       const maestro = checks[2];
-      const match = maestro.version?.match(/\b(\d+)\.(\d+)\.(\d+)([-+][\w.-]+)?/);
-      const supported = match && Number(match[1]) === 1 && Number(match[2]) >= 39 && !match[4]?.startsWith('-');
+      const supported = !!maestro.version && supportedMaestroVersion(maestro.version);
       if (!checks.every(check => check.available)) return result('blocked', 'Missing prerequisites', checks, [], 'environment');
-      if (!supported) return result('unsupported', 'Maestro must be >=1.39.0 and <2.0.0', checks, [], 'environment');
+      if (!supported) return result('unsupported', 'Maestro must be >=1.39.0 and <=2.12.1', checks, [], 'environment');
       return result('pass', 'Prerequisites are available', checks);
     }
     return result('unsupported', `Unknown operation: ${operation}`);

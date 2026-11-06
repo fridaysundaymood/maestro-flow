@@ -1,10 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import { isMap, isNode, isScalar, isSeq, LineCounter, parseAllDocuments } from 'yaml';
 import type { ResourceIndex } from './indexer.js';
+import { supportedMaestroVersion } from './run.js';
 
 export interface Diagnostic { ruleId: string; severity: 'error' | 'warning'; message: string; file: string; line: number; selector?: string }
 export interface Suppression { ruleId: string; reason: string; file?: string; line?: number }
-export interface LintOptions { locale?: string; rootScreens?: string[]; suppressions?: Suppression[] }
+export interface LintOptions { locale?: string; rootScreens?: string[]; suppressions?: Suppression[]; maestroVersion?: string }
 export interface LintResult { diagnostics: Diagnostic[]; passed: boolean }
 export const RULES = {
   MF001: { severity: 'error', rationale: 'Selector resembles changed resource copy', version: '1.0.0' },
@@ -32,6 +33,7 @@ function distance(a: string, b: string): number {
 }
 
 export async function lintFlow(file: string, index: ResourceIndex, options: LintOptions = {}): Promise<LintResult> {
+  if (options.maestroVersion && !supportedMaestroVersion(options.maestroVersion)) throw new Error(`Unsupported Maestro version: ${options.maestroVersion}; expected >=1.39.0 <=2.12.1`);
   const source = await readFile(file, 'utf8');
   const counter = new LineCounter();
   const documents = parseAllDocuments(source, { lineCounter: counter });

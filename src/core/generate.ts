@@ -1,4 +1,5 @@
 import type { ResourceIndex } from './indexer.js';
+import { supportedMaestroVersion } from './run.js';
 
 export interface Selector {
   key?: string;
@@ -75,10 +76,6 @@ export function parseJourney(markdown: string): Journey {
   return { title, anchor, steps };
 }
 
-function versionSupported(version: string): boolean {
-  const match = /^(?:v)?(\d+)\.(\d+)\.(\d+)$/.exec(version);
-  return !!match && Number(match[1]) === 1 && Number(match[2]) >= 39;
-}
 
 function resolve(selector: Selector, locale: string, index: ResourceIndex, findings: string[]): { field: string; value: string; container?: { field: string; value: string } } {
   let field = 'text';
@@ -124,7 +121,7 @@ function command(name: string, selector: Selector, locale: string, index: Resour
 }
 
 export async function generateFlows(input: GenerateInput): Promise<GeneratedFlow[]> {
-  if (!versionSupported(input.maestroVersion)) throw new Error(`Unsupported Maestro version: ${input.maestroVersion}; expected >=1.39.0 <2.0.0`);
+  if (!/^(?:v)?\d+\.\d+\.\d+$/.test(input.maestroVersion) || !supportedMaestroVersion(input.maestroVersion)) throw new Error(`Unsupported Maestro version: ${input.maestroVersion}; expected >=1.39.0 <=2.12.1`);
   if (!input.appId.trim()) throw new Error('appId is required');
   if (!input.locales.length || input.locales.some((locale) => !locale.trim())) throw new Error('At least one locale is required');
   const journey = typeof input.journey === 'string' ? parseJourney(input.journey) : input.journey;

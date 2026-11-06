@@ -63,8 +63,8 @@ export const runCommand: CommandRunner = (command, args, signal) => new Promise(
 });
 
 export function supportedMaestroVersion(output: string): boolean {
-  const match = output.match(/\b(\d+)\.(\d+)\.(\d+)(?:[-+][\w.-]+)?\b/);
-  return !!match && Number(match[1]) === 1 && Number(match[2]) >= 39 && !/-/.test(match[0]);
+  const match = output.match(/(?:^|[^a-z0-9])v?(\d+)\.(\d+)\.(\d+)([-+][\w.-]+)?\b/i);
+  return !!match && !match[4]?.startsWith('-') && (Number(match[1]) === 1 && Number(match[2]) >= 39 || Number(match[1]) === 2 && (Number(match[2]) < 12 || Number(match[2]) === 12 && Number(match[3]) <= 1));
 }
 
 function hierarchyHas(xml: string, text: string): boolean {
@@ -176,7 +176,7 @@ export async function runFlow(options: RunOptions): Promise<RunResult> {
     if (version.code !== 0) return finish('blocked', 'Maestro CLI is unavailable.', 'environment');
     const versionText = `${version.stdout}\n${version.stderr}`;
     evidence.push({ kind: 'tool-version', tool: 'maestro', version: versionText.trim() });
-    if (!supportedMaestroVersion(versionText)) return finish('unsupported', 'Maestro version must be >=1.39.0 and <2.0.0.', 'environment');
+    if (!supportedMaestroVersion(versionText)) return finish('unsupported', 'Maestro version must be >=1.39.0 and <=2.12.1.', 'environment');
     const device = await runner(options.adb || 'adb', ['-s', serial, 'get-state'], options.signal);
     if (device.interrupted) return finish('blocked', 'Run interrupted before device execution; device state was not restored.', 'environment');
     if (device.code !== 0 || device.stdout.trim() !== 'device') return finish('blocked', 'The selected adb device is not online.', 'environment');
@@ -195,6 +195,11 @@ export async function runFlow(options: RunOptions): Promise<RunResult> {
       if (dump.interrupted || options.signal?.aborted) return finish('blocked', 'Run interrupted; device state was not restored.', 'environment');
       const hierarchy = dump.code === 0 && dump.stdout.includes('<hierarchy') ? dump.stdout : undefined;
       if (hierarchy) await save(`hierarchy-${attempt}.xml`, hierarchy);
+      if (hierarchy && /(?:system ui|com\.android\.systemui)/i.test(hierarchy) && /(?:isn.t responding|not responding)/i.test(hierarchy)) {
+        evidence.push({ kind: 'failure-classification', attempt, category: 'environment', reason: 'system-ui-anr', hierarchy_captured: true });
+        if (attempt === 1) continue;
+        return finish('blocked', 'System UI is not responding; device environment prevented the run. Expectations were not changed.', 'environment');
+      }
       const kind = classifyFailure({ output: `${execution.stdout}\n${execution.stderr}`, hierarchy, screenAnchor: options.screenAnchor, selectorRepair: options.selectorRepair });
       evidence.push({ kind: 'failure-classification', attempt, category: kind, hierarchy_captured: !!hierarchy });
       if (kind === 'app') return finish('fail', 'App failure on the expected screen or app crash; expectations were not changed.', 'app');

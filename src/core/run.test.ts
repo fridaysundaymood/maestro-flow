@@ -46,7 +46,9 @@ describe('device execution', () => {
   });
   it('checks the supported Maestro range', () => {
     expect(supportedMaestroVersion('Maestro 1.39.0')).toBe(true);
-    expect(supportedMaestroVersion('2.12.1')).toBe(false);
+    expect(supportedMaestroVersion('2.12.1')).toBe(true);
+    expect(supportedMaestroVersion('2.12.2')).toBe(false);
+    expect(supportedMaestroVersion('1.38.9')).toBe(false);
     expect(supportedMaestroVersion('1.39.0-beta')).toBe(false);
   });
   it('uses the selected serial and preserves evidence in the run directory', async () => {
@@ -102,6 +104,25 @@ describe('device execution', () => {
     const { runner } = commands([failed('Element not found'), ok()]);
     const result = await runFlow({ projectRoot: root, flow: 'flow.yaml', serial: 'device', runner });
     expect(result.status).toBe('flaky');
+  });
+  it('retries an evidenced System UI ANR without changing the flow', async () => {
+    const root = await project();
+    const xml = '<hierarchy><node package="com.android.systemui" text="System UI isn\'t responding"/></hierarchy>';
+    const { runner, calls } = commands([failed('assertVisible failed'), ok()], xml);
+    const result = await runFlow({ projectRoot: root, flow: 'flow.yaml', serial: 'device', screenAnchor: 'Tasks', runner });
+    expect(result.status).toBe('flaky');
+    expect(result.evidence).toContainEqual(expect.objectContaining({ category: 'environment', reason: 'system-ui-anr' }));
+    expect(calls.filter((call) => call.includes('test'))).toHaveLength(2);
+    expect(await readFile(join(root, 'flow.yaml'), 'utf8')).toContain('assertVisible: "Expected value"');
+  });
+  it('blocks when System UI remains unresponsive', async () => {
+    const root = await project();
+    const xml = '<hierarchy><node package="com.android.systemui" text="System UI isn\'t responding"/></hierarchy>';
+    const { runner, calls } = commands([failed(), failed()], xml);
+    const result = await runFlow({ projectRoot: root, flow: 'flow.yaml', serial: 'device', screenAnchor: 'Tasks', runner });
+    expect(result.status).toBe('blocked');
+    expect(result.classification).toBe('environment');
+    expect(calls.filter((call) => call.includes('test'))).toHaveLength(2);
   });
   it('repairs only a uniquely evidenced tap selector, not assertions', async () => {
     const root = await project();

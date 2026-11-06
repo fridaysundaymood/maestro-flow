@@ -15,7 +15,7 @@ npm install
 npm run build
 ```
 
-The CLI operations are `index`, `lint`, `generate`, `run`, and `doctor`. Start the stdio MCP server with `node dist/mcp/index.js`. For device runs, install Java, Android SDK platform tools (`adb`), a device or emulator, and Maestro CLI `>=1.39.0 <2.0.0`; run `maestro-flow doctor` to inspect prerequisites. Offline indexing and linting do not require a device. On Windows, install the Android SDK and Java, put their launchers on PATH, and start an emulator using Android Studio or the SDK tools.
+The CLI operations are `index`, `lint`, `generate`, `run`, and `doctor`. Start the stdio MCP server with `node dist/mcp/index.js`. For device runs, install Java, Android SDK platform tools (`adb`), a device or emulator, and Maestro CLI `>=1.39.0 <=2.12.1`; run `maestro-flow doctor` to inspect prerequisites. Offline indexing and linting do not require a device. On Windows, install the Android SDK and Java, put their launchers on PATH, and start an emulator using Android Studio or the SDK tools.
 
 ## Workflow
 
@@ -123,7 +123,7 @@ Suppressions require a known rule ID, a nonempty reason, and a file or line scop
 | MF007 | error | Invalid suppression |
 | MF008 | warning | Unused suppression |
 
-The supported Maestro range is `>=1.39.0 <2.0.0`; examples use 1.40.0. Java, adb, and the emulator are device prerequisites, but their versions are not currently constrained by the tool. CI runs on Windows, macOS, and Linux with Node.js 24; this package declares Node.js 24 or newer.
+The supported Maestro range is `>=1.39.0 <=2.12.1`; examples use 1.40.0. When a Maestro version is supplied to lint it is checked against this range. If a captured hierarchy shows a System UI not-responding dialog, run records it as environment evidence and retries the unchanged flow once; a persistent dialog blocks the run. Java, adb, and the emulator are device prerequisites, but their versions are not currently constrained by the tool. CI runs on Windows, macOS, and Linux with Node.js 24; this package declares Node.js 24 or newer.
 
 The lint rule IDs are MF001 stale selector, MF002 unknown selector, MF003 root-screen Back, MF004 bare numeric assertion, MF005 missing launch anchor, MF006 coordinate tap, MF007 invalid suppression, and MF008 unused suppression. A hierarchy can contain sensitive information: keep screenshots and dumps local unless explicitly authorized to share them. Generated `selectors.json` and `.android-kit/` run artifacts are ignored by Git. No telemetry is sent.
 

@@ -31,6 +31,8 @@ test('indexes resources and merged hierarchy deterministically and lints flows',
     const flow = join(root, 'flow.yaml');
     await writeFile(flow, 'appId: fixture\n---\n- launchApp\n- extendedWaitUntil:\n    visible: Boards\n- tapOn: New task\n- tapOn:\n    point: 50%,50%\n- assertVisible: "42"\n');
     const result = await lintFlow(flow, index);
+    assert.deepEqual(await lintFlow(flow, index, { maestroVersion: '2.12.1' }), result);
+    await assert.rejects(lintFlow(flow, index, { maestroVersion: '2.12.2' }), /Unsupported Maestro version/);
     assert.ok(result.diagnostics.some(item => item.ruleId === 'MF001' && item.selector === 'New task'));
     assert.ok(result.diagnostics.some(item => item.ruleId === 'MF004'));
     assert.ok(result.diagnostics.some(item => item.ruleId === 'MF006'));

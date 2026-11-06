@@ -49,7 +49,7 @@ Maintain an app-specific `e2e/maestro/CONVENTIONS.md`, seeded from observed hier
 - Generate a launch with cleared state and retry, a stable anchor wait, necessary locale/currency or other state preconditions, journey steps, and assertions.
 - Prefer content descriptions, then resource-backed exact text, then regexes derived from format strings. Use coordinates only when an element has no semantics, and flag the accessibility finding.
 - Scope numeric assertions to a screen container or use a complete label rather than a bare number; assert the new value is present and the old value absent.
-- Target Maestro CLI `>=1.39.0 <2.0.0` and the flow YAML command schema supported by the detected CLI version. Pin the exact version used in CI; doctor rejects versions outside the range and generation or linting reports unsupported commands instead of producing incompatible YAML. Expand the range only after compatibility tests pass.
+- Target Maestro CLI `>=1.39.0 <=2.12.1` and the flow YAML command schema supported by the detected CLI version. Pin the exact version used in CI; doctor rejects versions outside the range and generation or linting reports unsupported commands instead of producing incompatible YAML. Expand the range only after compatibility tests pass.
 
 ### Linter
 
