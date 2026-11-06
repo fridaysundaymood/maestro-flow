@@ -1,8 +1,8 @@
 # maestro-flow
 
-**Turn plain-language user journeys into Maestro UI tests that don't break every time copy changes.**
+**Turn plain-language user journeys into Maestro UI tests grounded in app resources.**
 
-Describe a journey ("add an item to the cart, check the total updates"). maestro-flow writes a [Maestro](https://maestro.mobile.dev) flow using selectors taken from your actual string resources and accessibility tree, lints it, runs it on a device, and fixes test problems until it passes, or stops and reports an app bug with evidence. It never edits expected values to make a test pass.
+Describe a journey ("add an item to the cart, check the total updates"). The planned agent skill + CLI will generate a [Maestro](https://maestro.mobile.dev) flow using selectors from string resources and the accessibility tree, lint it, and run it on a device. Test repairs stop after three iterations or when evidence indicates an app bug; expected values are never edited to make a test pass. The CLI also works without an agent or MCP.
 
 Part of [android-kit](https://github.com/fridaysundaymood/android-kit), a toolkit combining five tools for end-to-end Android development. Works on its own; no other kit tool required.
 
@@ -17,7 +17,7 @@ Part of [android-kit](https://github.com/fridaysundaymood/android-kit), a toolki
 
 ## What it will do
 
-- **Resource index:** reads `res/values*/strings*.xml` (including plurals and format arguments) and Compose semantics, producing a `selectors.json` of valid selectors per locale.
+- **Resource index:** reads `res/values*/strings*.xml` (including plurals and format arguments) and Compose semantics, producing a reproducible, gitignored `selectors.json` per locale.
 - **Linter (CI-ready):** flags selectors that no longer match any string, Back on root screens, bare-number assertions, missing launch waits, and coordinate taps.
 - **Flow generator:** prefers content descriptions, then exact resource text, then format-derived regexes; scopes value assertions to a screen.
 - **Device loop:** runs flows (via [emu-lab](https://github.com/fridaysundaymood/emu-lab) if present, plain `adb` otherwise), classifies failures as stale selector, navigation, timing, or app bug, and repairs at most three times.
