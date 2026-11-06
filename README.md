@@ -1,35 +1,135 @@
 # maestro-flow
 
-**Turn plain-language user journeys into Maestro UI tests grounded in app resources.**
+Index Android resources and semantics, generate and lint Maestro flows from structured journeys, and report device-run evidence. The CLI works independently of MCP; free-form prose must first be translated into structured steps by a person or agent.
 
-Describe a journey ("add an item to the cart, check the total updates"). The planned agent skill + CLI will generate a [Maestro](https://maestro.mobile.dev) flow using selectors from string resources and the accessibility tree, lint it, and run it on a device. Test repairs stop after three iterations or when evidence indicates an app bug; expected values are never edited to make a test pass. The CLI also works without an agent or MCP.
+## Setup
 
-Part of [android-kit](https://github.com/fridaysundaymood/android-kit), a toolkit combining five tools for end-to-end Android development. Works on its own; no other kit tool required.
+Node.js 24 or newer is required. Clone [android-kit](https://github.com/fridaysundaymood/android-kit) next to this repository: the shared schema is currently a local dependency at `../android-kit/packages/kit-schema`.
 
-## Status
+```sh
+cd ../android-kit
+npm install
+npm run build --workspace @android-kit/schema
+cd ../maestro-flow
+npm install
+npm run build
+```
 
-> **Planning stage: there is no code to install yet.** This repo holds the design in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Star or watch it to follow progress. First milestone: string-resource index and the flow linter.
+The CLI operations are `index`, `lint`, `generate`, `run`, and `doctor`. Start the stdio MCP server with `node dist/mcp/index.js`. For device runs, install Java, Android SDK platform tools (`adb`), a device or emulator, and Maestro CLI `>=1.39.0 <2.0.0`; run `maestro-flow doctor` to inspect prerequisites. Offline indexing and linting do not require a device. On Windows, install the Android SDK and Java, put their launchers on PATH, and start an emulator using Android Studio or the SDK tools.
 
-## Who it's for
+## Workflow
 
-- Android teams (Kotlin/Compose) using Maestro, or wanting to, especially with AI agents writing the tests.
-- Anyone tired of UI tests failing because a label changed.
+1. Read app-specific `e2e/maestro/CONVENTIONS.md` when present and run `maestro-flow index`.
+2. Prepare structured journey steps and expected UI, then use `maestro-flow generate`.
+3. Run `maestro-flow lint` and resolve diagnostics using current resources or hierarchy evidence.
+4. Run the flow alone with `maestro-flow run`, then run the suite to find state leakage. Never alter an expected value to conceal a bug.
 
-## What it will do
+Every operation has a corresponding MCP tool: `maestro_flow_index`, `maestro_flow_generate`, `maestro_flow_lint`, `maestro_flow_run`, and `maestro_flow_doctor`. Use `--json` for the kit-schema v1 result envelope. Exit codes are 0 for pass, 1 for fail or flaky, and 2 for error, blocked, or unsupported. The [agent-neutral skill](skill/SKILL.md) describes the full iteration workflow.
 
-- **Resource index:** reads `res/values*/strings*.xml` (including plurals and format arguments) and Compose semantics, producing a reproducible, gitignored `selectors.json` per locale.
-- **Linter (CI-ready):** flags selectors that no longer match any string, Back on root screens, bare-number assertions, missing launch waits, and coordinate taps.
-- **Flow generator:** prefers content descriptions, then exact resource text, then format-derived regexes; scopes value assertions to a screen.
-- **Device loop:** runs flows (via [emu-lab](https://github.com/fridaysundaymood/emu-lab) if present, plain `adb` otherwise), classifies failures as stale selector, navigation, timing, or app bug, and repairs at most three times.
-- **Multiple locales:** one journey, flows for every shipped language.
+### CLI quickstart
 
-## Out of scope
+The following examples use the synthetic `kit-fixture-app` checked out alongside this repository. Create `journey.md` in that app:
 
-Replacing instrumented logic tests or visual regression testing.
+```md
+# Open a board
+Anchor: key:boards
 
-## Contributing
+| Action | Selector | Expected |
+| --- | --- | --- |
+| tap | text:General | text:General |
+```
 
-The design is open for feedback. Open an issue to question scope, suggest a feature, or discuss an approach before sending a pull request. Use synthetic examples only: no private app code, production data, or credentials.
+Replace resource keys and selectors with values found in the target app. From this repository:
+
+```sh
+node dist/cli/index.js index --project-root ../kit-fixture-app --json
+node dist/cli/index.js generate --project-root ../kit-fixture-app --journey journey.md --app-id dev.androidkit.fixture --maestro-version 1.40.0 --locale default --output e2e/maestro/generated.yaml --json
+node dist/cli/index.js lint --project-root ../kit-fixture-app --flow e2e/maestro/generated.yaml --json
+node dist/cli/index.js doctor --json
+node dist/cli/index.js run --project-root ../kit-fixture-app --flow e2e/maestro/generated.yaml --serial emulator-5554 --json
+```
+
+Use the actual resource key for the launch anchor and a device serial from `adb devices`; generation refuses to overwrite an existing flow. Add `--suite` and supply a suite path for a suite run. Repeat `--hierarchy` to index merged hierarchy dumps and `--locale` to generate multiple locale-specific flows. For evidence-supported selector repair, `run` accepts both `--repair-old` and `--repair-replacement`; `--screen-anchor` supplies the expected screen. Optional `--adb` and `--maestro` select executables.
+
+To run under an existing emu-lab lease, install and build `@android-kit/emu-lab` so it is resolvable from this package, then supply its database, lease ID, and app package. A serial is optional with a lease:
+
+```sh
+node dist/cli/index.js run --project-root ../kit-fixture-app --flow e2e/maestro/generated.yaml --emu-lab-database .android-kit/emu-lab.sqlite --lease-id YOUR_LEASE_ID --package-name dev.androidkit.fixture --json
+```
+
+The database path is relative to `--project-root`. MCP accepts `emuLab: { "databasePath": "...", "leaseId": "...", "packageName": "..." }`; the same object can be set under `maestroFlow.emuLab` in configuration. Explicit options override configuration. Without emu-lab, pass `--serial` directly.
+
+For locale setup, JSON journeys can express preconditions that Markdown tables cannot. The following illustrates the schema; use keys and navigation observed in your own synthetic app:
+
+```json
+{
+  "title": "Open a board",
+  "initialLocale": "default",
+  "anchor": { "key": "boards" },
+  "preconditions": [],
+  "localePreconditions": {
+    "in": [
+      { "action": "tap", "selector": { "key": "settings" }, "locale": "default" },
+      { "action": "tap", "selector": { "text": "Bahasa Indonesia" }, "locale": "default" }
+    ]
+  },
+  "steps": [{ "action": "assertVisible", "selector": { "key": "boards" } }]
+}
+```
+
+Save as `journey.json` and generate with `--journey journey.json --locale default --locale in`. Set preconditions to the actual UI needed to select each locale after cleared state.
+
+### MCP client
+
+The client-specific configuration location varies; a generic stdio server entry looks like:
+
+```json
+{
+  "mcpServers": {
+    "maestro-flow": {
+      "command": "node",
+      "args": ["/absolute/path/to/maestro-flow/dist/mcp/index.js"]
+    }
+  }
+}
+```
+
+Use an absolute Windows path such as `C:\\work\\maestro-flow\\dist\\mcp\\index.js` on Windows. Tool arguments use camelCase counterparts of CLI options, such as `projectRoot`, `appId`, `maestroVersion`, and `runId`. `locale` and `hierarchy` are arrays. The `journey` argument accepts a path or structured object; `selectorRepair` takes `{ "old": "...", "replacement": "..." }`.
+
+### Configuration and lint rules
+
+Optional `android-kit.yaml` has a `maestroFlow` section; explicit CLI options take precedence. For example:
+
+```yaml
+maestroFlow:
+  rootScreens: [Boards]
+  suppressions:
+    - ruleId: MF006
+      reason: "Synthetic fixture documents an unlabeled control"
+      file: /absolute/path/to/flow.yaml
+      line: 12
+```
+
+Suppressions require a known rule ID, a nonempty reason, and a file or line scope. Paths are matched against the linted flow path. Invalid suppressions are errors; unused suppressions are reported. Rule set version is `1.0.0`:
+
+| Rule | Severity | Meaning |
+| --- | --- | --- |
+| MF001 | error | Selector resembles changed resource copy |
+| MF002 | warning | Selector cannot be resolved from static evidence |
+| MF003 | warning | Back on a configured root screen |
+| MF004 | warning | Bare numeric assertion |
+| MF005 | warning | Launch without a visible anchor wait |
+| MF006 | warning | Coordinate tap |
+| MF007 | error | Invalid suppression |
+| MF008 | warning | Unused suppression |
+
+The supported Maestro range is `>=1.39.0 <2.0.0`; examples use 1.40.0. Java, adb, and the emulator are device prerequisites, but their versions are not currently constrained by the tool. CI runs on Windows, macOS, and Linux with Node.js 24; this package declares Node.js 24 or newer.
+
+The lint rule IDs are MF001 stale selector, MF002 unknown selector, MF003 root-screen Back, MF004 bare numeric assertion, MF005 missing launch anchor, MF006 coordinate tap, MF007 invalid suppression, and MF008 unused suppression. A hierarchy can contain sensitive information: keep screenshots and dumps local unless explicitly authorized to share them. Generated `selectors.json` and `.android-kit/` run artifacts are ignored by Git. No telemetry is sent.
+
+## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and [CHANGELOG.md](CHANGELOG.md). Use synthetic data only. The [implementation plan](IMPLEMENTATION_PLAN.md) records scope and milestones.
 
 ## License
 

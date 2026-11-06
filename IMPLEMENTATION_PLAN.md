@@ -2,7 +2,7 @@
 
 ## Status
 
-Planning only. The skill, library, CLI, linter, and device integration described here are not implemented.
+M1–M4 functionality is implemented. Unit tests and the fixture's offline stale-selector check pass; real-device EN/ID verification remains pending a buildable fixture APK.
 
 ## Problem and goal
 

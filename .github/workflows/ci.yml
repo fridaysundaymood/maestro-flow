@@ -1,0 +1,37 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  checks:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: maestro-flow
+      - uses: actions/checkout@v4
+        with:
+          repository: fridaysundaymood/android-kit
+          path: android-kit
+      - uses: actions/checkout@v4
+        with:
+          repository: fridaysundaymood/kit-fixture-app
+          path: kit-fixture-app
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install
+        working-directory: android-kit
+      - run: npm run build --workspace @android-kit/schema
+        working-directory: android-kit
+      - run: npm install
+        working-directory: maestro-flow
+      - run: npm run lint
+        working-directory: maestro-flow
+      - run: npm run build
+        working-directory: maestro-flow
+      - run: npm test
+        working-directory: maestro-flow
+      - run: node test/fixture-ci.mjs
+        working-directory: maestro-flow
