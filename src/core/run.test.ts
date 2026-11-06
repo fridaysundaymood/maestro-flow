@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { classifyFailure, runFlow, supportedMaestroVersion, type CommandResult, type CommandRunner } from './run.js';
+import { classifyFailure, runCommand, runFlow, supportedMaestroVersion, windowsBatchArguments, type CommandResult, type CommandRunner } from './run.js';
 
 const roots: string[] = [];
 async function project() {
@@ -28,6 +28,22 @@ function commands(attempts: CommandResult[], xml = hierarchy) {
 }
 
 describe('device execution', () => {
+  it('quotes Windows batch commands with spaces and rejects shell metacharacters', () => {
+    expect(windowsBatchArguments('C:\\Program Files\\Maestro\\maestro.bat', ['--version'])).toEqual([
+      '/d', '/s', '/c', '""C:\\Program Files\\Maestro\\maestro.bat" "--version""',
+    ]);
+    expect(() => windowsBatchArguments('maestro.bat', ['bad&command'])).toThrow();
+  });
+  it.skipIf(process.platform !== 'win32')('runs a Windows batch launcher in a path with spaces', async () => {
+    const root = await project();
+    const folder = join(root, 'launcher with spaces');
+    await mkdir(folder);
+    const launcher = join(folder, 'maestro.bat');
+    await writeFile(launcher, '@echo off\r\necho Maestro 1.40.0\r\n');
+    const result = await runCommand(launcher, ['--version']);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('1.40.0');
+  });
   it('checks the supported Maestro range', () => {
     expect(supportedMaestroVersion('Maestro 1.39.0')).toBe(true);
     expect(supportedMaestroVersion('2.12.1')).toBe(false);

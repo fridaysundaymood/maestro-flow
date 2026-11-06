@@ -2,7 +2,7 @@
 
 ## Status
 
-M1–M4 functionality is implemented. Unit tests and the fixture's offline stale-selector check pass; real-device EN/ID verification remains pending a buildable fixture APK.
+M1–M4 functionality is implemented. Unit tests and the fixture's offline stale-selector check pass. Generated EN and ID flows were run on an isolated emulator, but neither passed: the emulator displayed a "System UI isn't responding" dialog.
 
 ## Problem and goal
 

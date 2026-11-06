@@ -32,18 +32,22 @@ export interface RunOptions {
 }
 export type RunResult = Result;
 
+export function windowsBatchArguments(command: string, args: string[]): string[] {
+  if ([command, ...args].some((part) => /["\r\n%&|<>^]/.test(part))) throw new Error('Unsafe Windows command argument');
+  return ['/d', '/s', '/c', `"${[command, ...args].map((part) => `"${part}"`).join(' ')}"`];
+}
+
 export const runCommand: CommandRunner = (command, args, signal) => new Promise((resolveResult) => {
   if (signal?.aborted) return resolveResult({ code: null, stdout: '', stderr: '', interrupted: true });
   let executable = command;
   let argv = args;
-  if (process.platform === 'win32' && (/(?:\.cmd|\.bat)$/i.test(command) || command.toLowerCase() === 'maestro')) {
-    if ([command, ...args].some((part) => /["\r\n%&|<>^]/.test(part))) {
-      return resolveResult({ code: null, stdout: '', stderr: 'Unsafe Windows command argument' });
-    }
+  const batch = process.platform === 'win32' && (/(?:\.cmd|\.bat)$/i.test(command) || command.toLowerCase() === 'maestro');
+  if (batch) {
+    try { argv = windowsBatchArguments(command, args); }
+    catch { return resolveResult({ code: null, stdout: '', stderr: 'Unsafe Windows command argument' }); }
     executable = process.env.ComSpec || 'cmd.exe';
-    argv = ['/d', '/s', '/c', `"${[command, ...args].map((part) => `"${part}"`).join(' ')}"`];
   }
-  const child = spawn(executable, argv, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(executable, argv, { windowsHide: true, windowsVerbatimArguments: batch, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '';
   let stderr = '';
   let interrupted = false;
