@@ -15,7 +15,7 @@ npm install
 npm run build
 ```
 
-The CLI operations are `index`, `lint`, `generate`, `run`, and `doctor`. Start the stdio MCP server with `node dist/mcp/index.js`. For device runs, install Java, Android SDK platform tools (`adb`), a device or emulator, and Maestro CLI `>=1.39.0 <=2.12.1`; run `maestro-flow doctor` to inspect prerequisites. Offline indexing and linting do not require a device. On Windows, install the Android SDK and Java, put their launchers on PATH, and start an emulator using Android Studio or the SDK tools.
+The CLI operations are `index`, `lint`, `generate`, `run`, and `doctor`. Start the stdio MCP server with `node dist/mcp/bin.js`. For device runs, install Java, Android SDK platform tools (`adb`), a device or emulator, and Maestro CLI `>=1.39.0 <=2.12.1`; run `maestro-flow doctor` to inspect prerequisites. Offline indexing and linting do not require a device. On Windows, install the Android SDK and Java, put their launchers on PATH, and start an emulator using Android Studio or the SDK tools.
 
 ## Workflow
 
@@ -25,6 +25,8 @@ The CLI operations are `index`, `lint`, `generate`, `run`, and `doctor`. Start t
 4. Run the flow alone with `maestro-flow run`, then run the suite to find state leakage. Never alter an expected value to conceal a bug.
 
 Every operation has a corresponding MCP tool: `maestro_flow_index`, `maestro_flow_generate`, `maestro_flow_lint`, `maestro_flow_run`, and `maestro_flow_doctor`. Use `--json` for the kit-schema v1 result envelope. Exit codes are 0 for pass, 1 for fail or flaky, and 2 for error, blocked, or unsupported. The [agent-neutral skill](skill/SKILL.md) describes the full iteration workflow.
+
+The package root exports `toolDefinitions()` with JSON input schemas and async result-envelope handlers, plus `configSection`, `configSectionSchema`, `supportedSchemaMajors`, and `doctor()`. Importing it does not start the MCP server.
 
 ### CLI quickstart
 

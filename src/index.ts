@@ -3,3 +3,4 @@ export * from './core/lint.js';
 export * from './core/generate.js';
 export * from './core/run.js';
 export * from './core/service.js';
+export { toolDefinitions, configSection, configSectionSchema, supportedSchemaMajors, doctor } from './tools.js';
