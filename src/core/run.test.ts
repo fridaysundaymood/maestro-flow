@@ -28,6 +28,14 @@ function commands(attempts: CommandResult[], xml = hierarchy) {
   return { runner, calls };
 }
 
+describe('bounded commands', () => {
+  it('kills a hung command and reports a timeout', async () => {
+    const result = await runCommand(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], undefined, 300);
+    expect(result.code).toBeNull();
+    expect(result.stderr).toContain('Timed out after 300ms');
+  });
+});
+
 describe('device execution', () => {
   it('quotes Windows batch commands with spaces and rejects shell metacharacters', () => {
     expect(windowsBatchArguments('C:\\Program Files\\Maestro\\maestro.bat', ['--version'])).toEqual([

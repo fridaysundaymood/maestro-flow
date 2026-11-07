@@ -37,30 +37,40 @@ export function windowsBatchArguments(command: string, args: string[]): string[]
   return ['/d', '/s', '/c', `"${[command, ...args].map((part) => `"${part}"`).join(' ')}"`];
 }
 
-export const runCommand: CommandRunner = (command, args, signal) => new Promise((resolveResult) => {
-  if (signal?.aborted) return resolveResult({ code: null, stdout: '', stderr: '', interrupted: true });
+export const runCommand: CommandRunner = (command, args, signal, timeoutMs = 900_000) => {
+  const { promise, resolve } = Promise.withResolvers<CommandResult>();
+  if (signal?.aborted) return Promise.resolve({ code: null, stdout: '', stderr: '', interrupted: true });
   let executable = command;
   let argv = args;
   const batch = process.platform === 'win32' && (/(?:\.cmd|\.bat)$/i.test(command) || command.toLowerCase() === 'maestro');
   if (batch) {
     try { argv = windowsBatchArguments(command, args); }
-    catch { return resolveResult({ code: null, stdout: '', stderr: 'Unsafe Windows command argument' }); }
+    catch { return Promise.resolve({ code: null, stdout: '', stderr: 'Unsafe Windows command argument' }); }
     executable = process.env.ComSpec || 'cmd.exe';
   }
   const child = spawn(executable, argv, { windowsHide: true, windowsVerbatimArguments: batch, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '';
   let stderr = '';
   let interrupted = false;
+  let timedOut = false;
   child.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
   child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
-  const abort = () => { interrupted = true; child.kill(); };
+  // cmd.exe is the direct child on Windows; kill the whole tree or the JVM survives.
+  const kill = () => {
+    if (batch && child.pid) spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true, stdio: 'ignore' }).unref();
+    else child.kill();
+  };
+  const abort = () => { interrupted = true; kill(); };
   signal?.addEventListener('abort', abort, { once: true });
+  const timer = setTimeout(() => { timedOut = true; kill(); }, timeoutMs);
   child.on('error', (error) => { stderr += error.message; });
   child.on('close', (code) => {
+    clearTimeout(timer);
     signal?.removeEventListener('abort', abort);
-    resolveResult({ code, stdout, stderr, interrupted });
+    resolve({ code: timedOut ? null : code, stdout, stderr: timedOut ? `${stderr}\nTimed out after ${timeoutMs}ms` : stderr, interrupted });
   });
-});
+  return promise;
+};
 
 export function supportedMaestroVersion(output: string): boolean {
   const match = output.match(/(?:^|[^a-z0-9])v?(\d+)\.(\d+)\.(\d+)([-+][\w.-]+)?\b/i);
