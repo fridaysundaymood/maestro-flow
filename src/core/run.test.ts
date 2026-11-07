@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { classifyFailure, runCommand, runFlow, supportedMaestroVersion, windowsBatchArguments, type CommandResult, type CommandRunner } from './run.js';
 
@@ -100,6 +101,21 @@ describe('device execution', () => {
     expect(result.status).toBe('pass');
     expect(calls.some((call) => call.includes('--device') && call.includes('emulator-5558'))).toBe(true);
     expect(closed).toBe(true);
+  });
+  it('loads the installed emu-lab scheduler and rejects an unknown lease', async () => {
+    const root = await project();
+    const { runner, calls } = commands([ok()]);
+    const databasePath = join(root, 'leases.db');
+    const result = await runFlow({ projectRoot: root, flow: 'flow.yaml', emuLab: { databasePath, leaseId: 'missing', packageName: 'dev.fixture' }, runner });
+    expect(result.status).toBe('error');
+    expect(calls).toHaveLength(0);
+    const db = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      expect(db.prepare("SELECT name FROM sqlite_master WHERE name = 'lab_devices'").get()).toBeDefined();
+      expect(db.prepare('SELECT COUNT(*) AS count FROM lab_work').get()?.count).toBe(0);
+    } finally {
+      db.close();
+    }
   });
   it('reports missing emu-lab without falling back to an unleased device', async () => {
     const root = await project();

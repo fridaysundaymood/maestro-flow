@@ -2,25 +2,38 @@
   "name": "maestro-flow",
   "version": "0.1.0",
   "type": "module",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "bin": {
     "maestro-flow": "./dist/cli/index.js",
     "maestro-flow-mcp": "./dist/mcp/bin.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "files": ["dist", "skill", "AGENTS.md"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "skill",
+    "AGENTS.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "biome check .",
     "test": "vitest run"
   },
+  "bundleDependencies": ["@android-kit/emu-lab", "@android-kit/schema"],
   "dependencies": {
+    "@android-kit/emu-lab": "file:../emu-lab",
     "@android-kit/schema": "file:../android-kit/packages/kit-schema",
     "@modelcontextprotocol/sdk": "^1.25.0",
-    "fast-xml-parser": "^5.3.0",
     "ajv": "^8.17.1",
+    "fast-xml-parser": "^5.3.0",
     "yaml": "^2.8.1",
     "zod": "^3.25.0",
     "zod-to-json-schema": "^3.25.2"

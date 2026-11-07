@@ -4,16 +4,21 @@ Index Android resources and semantics, generate and lint Maestro flows from stru
 
 ## Setup
 
-Node.js 24 or newer is required. Clone [android-kit](https://github.com/fridaysundaymood/android-kit) next to this repository: the shared schema is currently a local dependency at `../android-kit/packages/kit-schema`.
+Node.js 24 or newer is required. Clone [android-kit](https://github.com/fridaysundaymood/android-kit) and [emu-lab](https://github.com/fridaysundaymood/emu-lab) next to this repository. Both are local dependencies and must be built before installing maestro-flow.
 
 ```sh
 cd ../android-kit
 npm install
 npm run build --workspace @android-kit/schema
+cd ../emu-lab
+npm install
+npm run build
 cd ../maestro-flow
 npm install
 npm run build
 ```
+
+The repository config installs local dependencies as copies. Run `npm ci` after rebuilding either sibling to refresh them. For distribution, run `npm pack` after this setup; the resulting tarball bundles both local packages so consumers do not need sibling checkouts.
 
 The CLI operations are `index`, `lint`, `generate`, `run`, and `doctor`. Start the stdio MCP server with `node dist/mcp/bin.js`. For device runs, install Java, Android SDK platform tools (`adb`), a device or emulator, and Maestro CLI `>=1.39.0 <=2.12.1`; run `maestro-flow doctor` to inspect prerequisites. Offline indexing and linting do not require a device. On Windows, install the Android SDK and Java, put their launchers on PATH, and start an emulator using Android Studio or the SDK tools.
 
@@ -53,7 +58,7 @@ node dist/cli/index.js run --project-root ../kit-fixture-app --flow e2e/maestro/
 
 Use the actual resource key for the launch anchor and a device serial from `adb devices`; generation refuses to overwrite an existing flow. Add `--suite` and supply a suite path for a suite run. Repeat `--hierarchy` to index merged hierarchy dumps and `--locale` to generate multiple locale-specific flows. For evidence-supported selector repair, `run` accepts both `--repair-old` and `--repair-replacement`; `--screen-anchor` supplies the expected screen. Optional `--adb` and `--maestro` select executables.
 
-To run under an existing emu-lab lease, install and build `@android-kit/emu-lab` so it is resolvable from this package, then supply its database, lease ID, and app package. A serial is optional with a lease:
+To run under an existing emu-lab lease, supply its database, lease ID, and app package. A serial is optional with a lease:
 
 ```sh
 node dist/cli/index.js run --project-root ../kit-fixture-app --flow e2e/maestro/generated.yaml --emu-lab-database .android-kit/emu-lab.sqlite --lease-id YOUR_LEASE_ID --package-name dev.androidkit.fixture --json
