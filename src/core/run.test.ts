@@ -21,6 +21,7 @@ function commands(attempts: CommandResult[], xml = hierarchy) {
     calls.push([command, ...args]);
     if (args[0] === '--version') return ok('1.39.0');
     if (args.includes('get-state')) return ok('device\n');
+    if (args.includes('input')) return ok();
     if (args.includes('uiautomator')) return ok(xml);
     return attempts.shift() ?? failed();
   };
@@ -114,6 +115,19 @@ describe('device execution', () => {
     expect(result.evidence).toContainEqual(expect.objectContaining({ category: 'environment', reason: 'system-ui-anr' }));
     expect(calls.filter((call) => call.includes('test'))).toHaveLength(2);
     expect(await readFile(join(root, 'flow.yaml'), 'utf8')).toContain('assertVisible: "Expected value"');
+  });
+  it('dismisses a System UI ANR by tapping its Wait control before rerunning', async () => {
+    const root = await project();
+    const xml = '<hierarchy><node package="com.android.systemui" text="System UI isn\'t responding"/><node text="Wait" bounds="[100,200][300,300]"/></hierarchy>';
+    const taps: string[][] = [];
+    const base = commands([failed(), ok()], xml).runner;
+    const runner: CommandRunner = async (command, args, signal) => {
+      if (args.includes('input')) taps.push(args);
+      return base(command, args, signal);
+    };
+    const result = await runFlow({ projectRoot: root, flow: 'flow.yaml', serial: 'device', screenAnchor: 'Tasks', runner });
+    expect(result.status).toBe('flaky');
+    expect(taps).toEqual([['-s', 'device', 'shell', 'input', 'tap', '200', '250']]);
   });
   it('blocks when System UI remains unresponsive', async () => {
     const root = await project();

@@ -196,7 +196,11 @@ export async function runFlow(options: RunOptions): Promise<RunResult> {
       const hierarchy = dump.code === 0 && dump.stdout.includes('<hierarchy') ? dump.stdout : undefined;
       if (hierarchy) await save(`hierarchy-${attempt}.xml`, hierarchy);
       if (hierarchy && /(?:system ui|com\.android\.systemui)/i.test(hierarchy) && /(?:isn.t responding|not responding)/i.test(hierarchy)) {
-        evidence.push({ kind: 'failure-classification', attempt, category: 'environment', reason: 'system-ui-anr', hierarchy_captured: true });
+        // Dismiss the dialog by its Wait control, then rerun the unchanged flow once.
+        const wait = /text="(Wait|Close app)"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/.exec(hierarchy);
+        if (wait) await runner(options.adb || 'adb', ['-s', serial, 'shell', 'input', 'tap', String((+wait[2] + +wait[4]) / 2), String((+wait[3] + +wait[5]) / 2)], options.signal);
+        else await runner(options.adb || 'adb', ['-s', serial, 'shell', 'input', 'keyevent', '4'], options.signal);
+        evidence.push({ kind: 'failure-classification', attempt, category: 'environment', reason: 'system-ui-anr', hierarchy_captured: true, dismissed_with: wait ? 'wait-button' : 'back' });
         if (attempt === 1) continue;
         return finish('blocked', 'System UI is not responding; device environment prevented the run. Expectations were not changed.', 'environment');
       }
