@@ -2,7 +2,7 @@
 
 ## Status
 
-M1–M4 functionality is implemented. Unit tests and the fixture's offline stale-selector check pass. Generated EN and ID flows were run on an isolated emulator, but neither passed: the emulator displayed a "System UI isn't responding" dialog.
+M1–M4 functionality is implemented. Unit tests and the fixture's offline stale-selector check pass. Generated EN and ID flows passed on an emu-lab leased emulator with Maestro 2.12.1.
 
 ## Problem and goal
 
