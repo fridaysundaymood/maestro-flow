@@ -43,6 +43,37 @@ test('indexes resources and merged hierarchy deterministically and lints flows',
   } finally { await rm(root, { recursive: true, force: true }); }
 }, 30_000);
 
+test('recognizes entered values, interpolations, and Maestro regex selectors', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'maestro-dynamic-'));
+  try {
+    const resources = join(root, 'app/src/main/res/values');
+    await mkdir(resources, { recursive: true });
+    await writeFile(join(resources, 'strings.xml'), '<resources><string name="total">Total (IDR)</string><string name="spent">Amount spent</string><string name="count">Count: %1$d</string><string name="add">Add task</string></resources>');
+    const flow = join(root, 'flow.yaml');
+    await writeFile(flow, `appId: fixture
+---
+- inputText: Lunch 25
+- assertVisible: Lunch 25
+- tapOn: Lunch 25
+- inputText: \${VAR}
+- assertVisible: \${VAR}
+- tapOn: \${output.value}
+- assertVisible: 'Total \\(IDR\\)'
+- assertVisible: '.*spent.*'
+- assertVisible: 'Count: [0-9]+'
+- assertVisible: 'Rp ?[0-9.]+'
+- assertVisible: Unrelated dynamic content
+- tapOn: New task
+`);
+    const result = await lintFlow(flow, await buildIndex(root));
+    assert.deepEqual(result.diagnostics.filter(item => item.ruleId === 'MF001').map(item => item.selector), ['New task']);
+    assert.ok(result.diagnostics.some(item => item.ruleId === 'MF002' && item.message.includes('not found in resources') && item.selector === 'Unrelated dynamic content'));
+    for (const selector of ['Lunch 25', '${VAR}', '${output.value}', 'Total \\(IDR\\)', '.*spent.*', 'Count: [0-9]+', 'Rp ?[0-9.]+']) {
+      assert.ok(!result.diagnostics.some(item => item.selector === selector), selector);
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+}, 30_000);
+
 test('shared fixture stale copy is flagged', async () => {
   const fixture = resolve('../kit-fixture-app');
   const index = await buildIndex(fixture);

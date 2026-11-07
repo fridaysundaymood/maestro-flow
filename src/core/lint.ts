@@ -51,10 +51,23 @@ export async function lintFlow(file: string, index: ResourceIndex, options: Lint
   const scalar = (node: unknown): string | undefined => isScalar(node) && typeof node.value === 'string' ? node.value : undefined;
   const checkSelector = (value: string, line: number, assertion: boolean) => {
     if (assertion && /^[-+]?\d+(?:[.,]\d+)?$/.test(value)) emit('MF004', 'Bare numeric assertion should be scoped or use a complete label', line, value);
-    if (literals.has(value) || entered.has(value) || patterns.some(pattern => pattern.test(value))) return;
+    if (entered.has(value) || /\$\{[^}]+\}/.test(value)) return;
+    let selector: RegExp | undefined;
+    try { selector = new RegExp(`^(?:${value})$`); } catch { /* Unknown selectors remain diagnostics. */ }
+    const samples = values.flatMap(entry => {
+      if (!entry.regex) return [entry.value];
+      return ['1', '12', 'value'].map(sample => entry.value.replace(/%%|%(?:[1-9]\d*\$)?[sdif]/g, token => token === '%%' ? '%' : sample));
+    });
+    if (literals.has(value) || patterns.some(pattern => pattern.test(value)) || (selector && [...literals, ...samples, ...entered].some(candidate => selector.test(candidate)))) return;
+    // Numeric patterns select runtime values rather than fixed resource copy.
+    if (/(?:\\[dD]|\[[^\]]*\d[^\]]*\])/.test(value)) return;
+    if (/[\\[\]().*+?{}|^$]/.test(value)) {
+      emit('MF002', 'Selector not found in resources or hierarchy; it may be dynamic content', line, value);
+      return;
+    }
     const nearby = [...literals].some(candidate => candidate.length >= 4 && value.length >= 4 && (distance(candidate.toLowerCase(), value.toLowerCase()) <= Math.max(2, Math.floor(Math.max(candidate.length, value.length) / 3)) || candidate.toLowerCase().split(/\s+/).some(word => word.length >= 4 && value.toLowerCase().split(/\s+/).includes(word))));
     if (nearby) emit('MF001', 'Selector resembles resource copy but does not match it; confirm the intended control', line, value);
-    else emit('MF002', 'Selector is not known from resources, input, or hierarchy evidence', line, value);
+    else emit('MF002', 'Selector not found in resources or hierarchy; it may be dynamic content', line, value);
   };
   const selectorFrom = (node: unknown): string | undefined => {
     const direct = scalar(node);
