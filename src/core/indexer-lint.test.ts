@@ -29,7 +29,7 @@ test('indexes resources and merged hierarchy deterministically and lints flows',
     assert.equal(index.unsupported[0].key, 'bad');
     assert.ok(index.semantics.some(entry => entry.value === 'Merged action'));
     const flow = join(root, 'flow.yaml');
-    await writeFile(flow, 'appId: fixture\n---\n- launchApp\n- extendedWaitUntil:\n    visible: Boards\n- tapOn: New task\n- tapOn:\n    point: 50%,50%\n- assertVisible: "42"\n');
+    await writeFile(flow, '# stale selector: current control says Add task\nappId: fixture\n---\n- launchApp\n- extendedWaitUntil:\n    visible: Boards\n- tapOn: New task\n- tapOn:\n    point: 50%,50%\n- assertVisible: "42"\n');
     const result = await lintFlow(flow, index);
     assert.deepEqual(await lintFlow(flow, index, { maestroVersion: '2.12.1' }), result);
     await assert.rejects(lintFlow(flow, index, { maestroVersion: '2.12.2' }), /Unsupported Maestro version/);
@@ -55,6 +55,9 @@ test('recognizes entered values, interpolations, and Maestro regex selectors', a
 - inputText: Lunch 25
 - assertVisible: Lunch 25
 - tapOn: Lunch 25
+- inputText: 45k lunch
+- assertVisible: Lunch
+- assertVisible: 'USD · US Dollar'
 - inputText: \${VAR}
 - assertVisible: \${VAR}
 - tapOn: \${output.value}
@@ -66,9 +69,10 @@ test('recognizes entered values, interpolations, and Maestro regex selectors', a
 - tapOn: New task
 `);
     const result = await lintFlow(flow, await buildIndex(root));
-    assert.deepEqual(result.diagnostics.filter(item => item.ruleId === 'MF001').map(item => item.selector), ['New task']);
+    assert.ok(!result.diagnostics.some(item => item.ruleId === 'MF001'));
     assert.ok(result.diagnostics.some(item => item.ruleId === 'MF002' && item.message.includes('not found in resources') && item.selector === 'Unrelated dynamic content'));
-    for (const selector of ['Lunch 25', '${VAR}', '${output.value}', 'Total \\(IDR\\)', '.*spent.*', 'Count: [0-9]+', 'Rp ?[0-9.]+']) {
+    assert.ok(result.diagnostics.some(item => item.ruleId === 'MF002' && item.selector === 'USD · US Dollar'));
+    for (const selector of ['Lunch 25', 'Lunch', '${VAR}', '${output.value}', 'Total \\(IDR\\)', '.*spent.*', 'Count: [0-9]+', 'Rp ?[0-9.]+']) {
       assert.ok(!result.diagnostics.some(item => item.selector === selector), selector);
     }
   } finally { await rm(root, { recursive: true, force: true }); }

@@ -6,12 +6,33 @@ import { executeOperation, type Operation, type OperationInput } from '../core/s
 const operations: Record<string, true> = { index: true, lint: true, generate: true, run: true, doctor: true };
 const options: Record<string, keyof OperationInput> = {
   'project-root': 'projectRoot', config: 'config', 'run-id': 'runId', index: 'index', hierarchy: 'hierarchy',
-  flow: 'flow', locale: 'locale', 'app-id': 'appId', journey: 'journey', output: 'output',
+  flow: 'flow', 'flows-dir': 'flowsDir', locale: 'locale', 'app-id': 'appId', journey: 'journey', output: 'output',
   'maestro-version': 'maestroVersion', serial: 'serial', suite: 'suite', 'screen-anchor': 'screenAnchor',
   maestro: 'maestro', adb: 'adb',
 };
+const common = '--project-root PATH  --config PATH  --run-id ID  --json  --help';
+const help: Record<string, string> = {
+  index: 'Build a resource index.\n  --index PATH  --hierarchy PATH (repeatable)',
+  lint: 'Lint one flow or recursively lint a directory.\n  --flow PATH  --flows-dir PATH (default: e2e/maestro)  --index PATH  --locale LOCALE  --maestro-version VERSION',
+  generate: 'Generate flows from a journey.\n  --journey PATH  --app-id ID  --output PATH  --index PATH  --locale LOCALE (repeatable)  --maestro-version VERSION',
+  run: 'Run a flow on a device.\n  --flow PATH  --serial SERIAL  --suite  --screen-anchor TEXT  --maestro PATH  --adb PATH\n  --repair-old TEXT  --repair-replacement TEXT\n  --emu-lab-database PATH  --lease-id ID  --package-name NAME',
+  doctor: 'Check prerequisites.\n  --maestro PATH  --adb PATH',
+};
+function printHelp(command?: string): void {
+  console.log(command ? `Usage: maestro-flow ${command} [options]\n\n${help[command]}\n\nCommon options: ${common}` :
+    `Usage: maestro-flow <command> [options]\n\nCommands: index, lint, generate, run, doctor\nRun maestro-flow <command> --help for details.\n\nCommon options: ${common}`);
+}
 export async function main(argv: string[]): Promise<number> {
   const [command, ...args] = argv;
+  if (command === '--help' || command === '-h' || command === 'help') {
+    if (command === 'help' && args[0] && !operations[args[0]]) { console.error(`Unknown command: ${args[0]}`); return 2; }
+    printHelp(command === 'help' ? args[0] : undefined);
+    return 0;
+  }
+  if (command && operations[command] && args.some(arg => arg === '--help' || arg === '-h')) {
+    printHelp(command);
+    return 0;
+  }
   let error: string | undefined;
   const input: OperationInput = {};
   let json = false;

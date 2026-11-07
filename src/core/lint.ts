@@ -17,7 +17,7 @@ export const RULES = {
   MF007: { severity: 'error', rationale: 'Suppressions require a known rule and a reason', version: '1.0.0' },
   MF008: { severity: 'warning', rationale: 'Unused suppressions hide future findings', version: '1.0.0' },
 } as const;
-export const RULESET_VERSION = '1.0.0';
+export const RULESET_VERSION = '1.1.0';
 
 function distance(a: string, b: string): number {
   const previous = Array.from({ length: b.length + 1 }, (_, i) => i);
@@ -50,8 +50,15 @@ export async function lintFlow(file: string, index: ResourceIndex, options: Lint
   const lineOf = (node: unknown) => counter.linePos(isNode(node) ? node.range?.[0] ?? 0 : 0).line;
   const scalar = (node: unknown): string | undefined => isScalar(node) && typeof node.value === 'string' ? node.value : undefined;
   const checkSelector = (value: string, line: number, assertion: boolean) => {
-    if (assertion && /^[-+]?\d+(?:[.,]\d+)?$/.test(value)) emit('MF004', 'Bare numeric assertion should be scoped or use a complete label', line, value);
-    if (entered.has(value) || /\$\{[^}]+\}/.test(value)) return;
+    if (assertion && /^[-+]?\d+(?:[.,]\d+)?$/.test(value)) {
+      emit('MF004', 'Bare numeric assertion may match dynamic content; scope it or use a complete label', line, value);
+      return;
+    }
+    const tokens = value.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+    if (entered.has(value) || /\$\{[^}]+\}/.test(value) || (tokens.length > 0 && [...entered].some(input => {
+      const inputTokens = new Set(input.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
+      return tokens.every(token => inputTokens.has(token));
+    }))) return;
     let selector: RegExp | undefined;
     try { selector = new RegExp(`^(?:${value})$`); } catch { /* Unknown selectors remain diagnostics. */ }
     const samples = values.flatMap(entry => {
@@ -65,8 +72,14 @@ export async function lintFlow(file: string, index: ResourceIndex, options: Lint
       emit('MF002', 'Selector not found in resources or hierarchy; it may be dynamic content', line, value);
       return;
     }
-    const nearby = [...literals].some(candidate => candidate.length >= 4 && value.length >= 4 && (distance(candidate.toLowerCase(), value.toLowerCase()) <= Math.max(2, Math.floor(Math.max(candidate.length, value.length) / 3)) || candidate.toLowerCase().split(/\s+/).some(word => word.length >= 4 && value.toLowerCase().split(/\s+/).includes(word))));
-    if (nearby) emit('MF001', 'Selector resembles resource copy but does not match it; confirm the intended control', line, value);
+    const normalized = value.toLocaleLowerCase();
+    const nearby = [...literals].some(candidate => {
+      const other = candidate.toLocaleLowerCase();
+      const length = Math.max(normalized.length, other.length);
+      return length >= 4 && 1 - distance(normalized, other) / length >= 0.85;
+    });
+    const annotated = source.split(/\r?\n/).some(comment => /^\s*#/.test(comment) && /\bstale\b/i.test(comment) && [...literals].some(candidate => comment.includes(candidate) && candidate.toLowerCase().split(/\s+/).some(word => word.length >= 4 && normalized.split(/\s+/).includes(word))));
+    if (nearby || annotated) emit('MF001', 'Selector resembles resource copy but does not match it; confirm the intended control', line, value);
     else emit('MF002', 'Selector not found in resources or hierarchy; it may be dynamic content', line, value);
   };
   const selectorFrom = (node: unknown): string | undefined => {

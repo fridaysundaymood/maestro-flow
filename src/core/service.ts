@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { access, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -11,13 +11,13 @@ import { runFlow, supportedMaestroVersion } from './run.js';
 export type Operation = 'index' | 'lint' | 'generate' | 'run' | 'doctor';
 export interface OperationInput {
   projectRoot?: string; config?: string; runId?: string; index?: string; hierarchy?: string[];
-  flow?: string; locale?: string[]; appId?: string; journey?: string | Journey; output?: string;
+  flow?: string; flowsDir?: string; locale?: string[]; appId?: string; journey?: string | Journey; output?: string;
   maestroVersion?: string; serial?: string; suite?: boolean; screenAnchor?: string;
   selectorRepair?: { old: string; replacement: string }; maestro?: string; adb?: string; signal?: AbortSignal;
   emuLab?: { databasePath: string; leaseId: string; packageName: string };
 }
 interface Config {
-  index?: string; hierarchy?: string[]; flow?: string; locale?: string[]; appId?: string;
+  index?: string; hierarchy?: string[]; flow?: string; flowsDir?: string; locale?: string[]; appId?: string;
   output?: string; maestroVersion?: string; serial?: string; rootScreens?: string[];
   emuLab?: { databasePath: string; leaseId: string; packageName: string };
   suppressions?: { ruleId: string; reason: string; file?: string; line?: number }[];
@@ -26,7 +26,7 @@ const stringArray = { type: 'array', items: { type: 'string' } };
 export const maestroFlowSchema = {
   type: 'object', additionalProperties: false,
   properties: {
-    index: { type: 'string' }, hierarchy: stringArray, flow: { type: 'string' }, locale: stringArray,
+    index: { type: 'string' }, hierarchy: stringArray, flow: { type: 'string' }, flowsDir: { type: 'string' }, locale: stringArray,
     appId: { type: 'string' }, output: { type: 'string' }, maestroVersion: { type: 'string' },
     serial: { type: 'string' }, rootScreens: stringArray,
     emuLab: { type: 'object', additionalProperties: false, required: ['databasePath', 'leaseId', 'packageName'],
@@ -45,6 +45,14 @@ async function atomicWrite(path: string, content: string): Promise<void> {
 }
 async function readIndex(path: string): Promise<ResourceIndex> {
   return JSON.parse(await readFile(path, 'utf8')) as ResourceIndex;
+}
+async function findFlows(directory: string): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = await Promise.all(entries.map(entry => {
+    const path = join(directory, entry.name);
+    return entry.isDirectory() ? findFlows(path) : Promise.resolve(entry.isFile() && /\.ya?ml$/i.test(entry.name) ? [path] : []);
+  }));
+  return files.flat().sort();
 }
 function required(value: string | undefined, name: string): string {
   if (!value) throw new Error(`Missing required ${name}`);
@@ -77,9 +85,20 @@ async function performOperation(operation: Operation, input: OperationInput = {}
       return result(index.unsupported.length ? 'unsupported' : 'pass', index.unsupported.length ? 'Index contains unsupported resource formats' : 'Resource index created', [...index.unsupported, { output: indexPath }]);
     }
     if (operation === 'lint') {
-      const flow = resolvePath(root, required(input.flow ?? config.flow, 'flow'));
-      const lint = await lintFlow(flow, await readIndex(indexPath), { locale: (input.locale ?? config.locale)?.[0], rootScreens: config.rootScreens, suppressions: config.suppressions, maestroVersion: input.maestroVersion ?? config.maestroVersion });
-      return result(lint.passed ? 'pass' : 'fail', lint.passed ? 'Flow lint passed' : 'Flow lint failed', lint.diagnostics, [], lint.passed ? undefined : 'test');
+      const selected = input.flow ?? config.flow;
+      const flows = selected ? [resolvePath(root, selected)] : await findFlows(resolvePath(root, input.flowsDir ?? config.flowsDir ?? 'e2e/maestro'));
+      if (!flows.length) throw new Error('No flow YAML files found');
+      const index = await readIndex(indexPath);
+      const diagnostics = [];
+      let passed = true;
+      for (const flow of flows) {
+        const suppressions = config.suppressions?.filter(item => !item.file || resolvePath(root, item.file) === flow)
+          .map(item => item.file ? { ...item, file: flow } : item);
+        const lint = await lintFlow(flow, index, { locale: (input.locale ?? config.locale)?.[0], rootScreens: config.rootScreens, suppressions, maestroVersion: input.maestroVersion ?? config.maestroVersion });
+        passed &&= lint.passed;
+        diagnostics.push(...lint.diagnostics.map(diagnostic => ({ ...diagnostic, file: relative(root, diagnostic.file).split(sep).join('/') })));
+      }
+      return result(passed ? 'pass' : 'fail', passed ? 'Flow lint passed' : 'Flow lint failed', diagnostics, [], passed ? undefined : 'test');
     }
     if (operation === 'generate') {
       const journeyInput = input.journey;

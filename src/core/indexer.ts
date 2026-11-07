@@ -22,9 +22,46 @@ export interface ResourceIndex {
 }
 
 const xml = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_', textNodeName: '#text', parseTagValue: false, trimValues: false });
+const resourceXml = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_', textNodeName: '#text', parseTagValue: false, trimValues: false, preserveOrder: true, cdataPropName: '#cdata' });
 const list = (value: unknown): unknown[] => value == null ? [] : Array.isArray(value) ? value : [value];
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : {};
-const text = (value: unknown): string => typeof value === 'object' && value !== null ? String(record(value)['#text'] ?? '') : String(value ?? '');
+function resourceText(nodes: unknown): string {
+  let raw = '';
+  const visit = (value: unknown): void => {
+    for (const node of list(value)) {
+      if (typeof node === 'string' || typeof node === 'number') raw += String(node);
+      else for (const [key, child] of Object.entries(record(node))) {
+        if (key === '#text') raw += String(child);
+        else if (key !== ':@') visit(child);
+      }
+    }
+  };
+  visit(nodes);
+  let result = '';
+  let quoted = false;
+  let space = false;
+  for (let i = 0; i < raw.length; i++) {
+    const char = raw[i];
+    if (char === '\\' && i + 1 < raw.length) {
+      const next = raw[++i];
+      if (space && result) result += ' ';
+      space = false;
+      if (next === 'u' && /^[\da-fA-F]{4}$/.test(raw.slice(i + 1, i + 5))) {
+        result += String.fromCharCode(parseInt(raw.slice(i + 1, i + 5), 16));
+        i += 4;
+      } else result += ({ n: '\n', t: '\t', r: '\r' } as Record<string, string>)[next] ?? next;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (!quoted && /[ \t\r\n]/.test(char)) {
+      space = true;
+    } else {
+      if (space && result) result += ' ';
+      space = false;
+      result += char;
+    }
+  }
+  return result;
+}
 const normalized = (path: string) => path.split(sep).join('/');
 
 /** Convert Android printf strings to anchored, bounded regexes; unknown formats are rejected. */
@@ -89,24 +126,29 @@ export async function buildIndex(root: string, options: { hierarchyPaths?: strin
     const name = fileName(file);
     const match = /(?:^|\/)res\/values(?:-([^/]+))?\/strings[^/]*\.xml$/.exec(name);
     if (match) {
-      const parsed: unknown = xml.parse(await readFile(file, 'utf8'));
-      const data = record(record(parsed).resources);
+      const parsed = list(resourceXml.parse(await readFile(file, 'utf8')));
+      const data = parsed.flatMap(node => list(record(node).resources));
       const locale = match[1] ?? 'default';
-      for (const value of list(data.string)) {
+      for (const value of data) {
         const item = record(value);
-        if (typeof item['@_name'] === 'string') add({ key: item['@_name'], locale, kind: 'string', value: text(item) }, file);
-      }
-      for (const value of list(data.plurals)) {
-        const item = record(value);
-        for (const partValue of list(item.item)) {
-          const part = record(partValue);
-          if (typeof item['@_name'] === 'string' && typeof part['@_quantity'] === 'string') add({ key: item['@_name'], locale, kind: 'plural', quantity: part['@_quantity'], value: text(part) }, file);
+        const attrs = record(item[':@']);
+        const key = attrs['@_name'];
+        if (typeof key !== 'string') continue;
+        if ('string' in item) {
+          add({ key, locale, kind: 'string', value: resourceText(item.string) }, file);
+        } else if ('plurals' in item) {
+          for (const partValue of list(item.plurals)) {
+            const part = record(partValue);
+            const quantity = record(part[':@'])['@_quantity'];
+            if (typeof quantity === 'string') add({ key, locale, kind: 'plural', quantity, value: resourceText(part.item) }, file);
+          }
+        } else if ('string-array' in item) {
+          let index = 0;
+          for (const partValue of list(item['string-array'])) {
+            const part = record(partValue);
+            if ('item' in part) add({ key, locale, kind: 'array', index: index++, value: resourceText(part.item) }, file);
+          }
         }
-      }
-      for (const value of list(data['string-array'])) {
-        const item = record(value);
-        const key = item['@_name'];
-        if (typeof key === 'string') list(item.item).forEach((part, index) => add({ key, locale, kind: 'array', index, value: text(part) }, file));
       }
     } else if (/\.(?:kt|java)$/.test(name)) {
       const source = await readFile(file, 'utf8');

@@ -112,7 +112,9 @@ maestroFlow:
       line: 12
 ```
 
-Suppressions require a known rule ID, a nonempty reason, and a file or line scope. Paths are matched against the linted flow path. Invalid suppressions are errors; unused suppressions are reported. Rule set version is `1.0.0`:
+Suppressions require a known rule ID, a nonempty reason, and a file or line scope. Paths are matched against the linted flow path. Invalid suppressions are errors; unused suppressions are reported. Rule set version is `1.1.0`:
+
+Without `--flow`, lint scans YAML flows recursively under `maestroFlow.flowsDir` (default `e2e/maestro`). Diagnostics use project-relative paths. MF001 requires close matching resource copy or an explicit stale-copy annotation; MF002 means the selector was not found in resources or the hierarchy and may be dynamic content. Entered text, its constituent tokens, and interpolated variables are treated as runtime data.
 
 | Rule | Severity | Meaning |
 | --- | --- | --- |
