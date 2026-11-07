@@ -88,8 +88,17 @@ async function performOperation(operation: Operation, input: OperationInput = {}
       const selected = input.flow ?? config.flow;
       const flows = selected ? [resolvePath(root, selected)] : await findFlows(resolvePath(root, input.flowsDir ?? config.flowsDir ?? 'e2e/maestro'));
       if (!flows.length) throw new Error('No flow YAML files found');
-      const index = await readIndex(indexPath);
-      const diagnostics = [];
+      let previous: ResourceIndex | undefined;
+      try { previous = await readIndex(indexPath); }
+      catch (error) {
+        if (!(error instanceof SyntaxError) && (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+      const hierarchyPaths = (input.hierarchy ?? config.hierarchy ?? previous?.hierarchyInputs)?.map(path => resolvePath(root, path));
+      const current = await buildIndex(root, { hierarchyPaths });
+      const refreshed = !previous || previous.indexerVersion !== current.indexerVersion || previous.inputHash !== current.inputHash;
+      const index = refreshed ? current : previous ?? current;
+      if (refreshed) await atomicWrite(indexPath, JSON.stringify(index, null, 2) + '\n');
+      const diagnostics: unknown[] = refreshed ? [{ kind: 'index-refresh', reason: !previous ? 'missing or invalid' : previous.indexerVersion !== current.indexerVersion ? 'indexer version changed' : 'inputs changed' }] : [];
       let passed = true;
       for (const flow of flows) {
         const suppressions = config.suppressions?.filter(item => !item.file || resolvePath(root, item.file) === flow)

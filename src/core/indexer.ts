@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { relative, resolve, sep } from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
@@ -15,11 +16,14 @@ export interface SemanticsEntry { value?: string; resourceKey?: string; screen?:
 export interface IndexIssue { file: string; key: string; message: string }
 export interface ResourceIndex {
   version: 1;
+  indexerVersion?: string;
+  inputHash?: string;
   resources: ResourceEntry[];
   semantics: SemanticsEntry[];
   hierarchyInputs: string[];
   unsupported: IndexIssue[];
 }
+export const INDEXER_VERSION = '1.0.0';
 
 const xml = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_', textNodeName: '#text', parseTagValue: false, trimValues: false });
 const resourceXml = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_', textNodeName: '#text', parseTagValue: false, trimValues: false, preserveOrder: true, cdataPropName: '#cdata' });
@@ -116,6 +120,10 @@ export async function buildIndex(root: string, options: { hierarchyPaths?: strin
   const unsupported: IndexIssue[] = [];
   const files = await filesUnder(root);
   const fileName = (file: string) => normalized(relative(root, file));
+  const hash = createHash('sha256');
+  const hashInput = (kind: string, name: string, content: string) => {
+    for (const part of [kind, name, content]) hash.update(`${Buffer.byteLength(part)}:`).update(part);
+  };
   const add = (entry: ResourceEntry, file: string) => {
     const formatted = formatSelector(entry.value);
     if (formatted.regex) entry.regex = formatted.regex;
@@ -126,7 +134,9 @@ export async function buildIndex(root: string, options: { hierarchyPaths?: strin
     const name = fileName(file);
     const match = /(?:^|\/)res\/values(?:-([^/]+))?\/strings[^/]*\.xml$/.exec(name);
     if (match) {
-      const parsed = list(resourceXml.parse(await readFile(file, 'utf8')));
+      const source = await readFile(file, 'utf8');
+      hashInput('resource', name, source);
+      const parsed = list(resourceXml.parse(source));
       const data = parsed.flatMap(node => list(record(node).resources));
       const locale = match[1] ?? 'default';
       for (const value of data) {
@@ -152,6 +162,7 @@ export async function buildIndex(root: string, options: { hierarchyPaths?: strin
       }
     } else if (/\.(?:kt|java)$/.test(name)) {
       const source = await readFile(file, 'utf8');
+      hashInput('source', name, source);
       let screen: string | undefined;
       for (const line of source.split(/\r?\n/)) {
         const functionName = /\bfun\s+(\w+)/.exec(line);
@@ -166,6 +177,7 @@ export async function buildIndex(root: string, options: { hierarchyPaths?: strin
   const hierarchyInputs = (options.hierarchyPaths ?? []).map(path => fileName(resolve(root, path))).sort();
   for (const path of hierarchyInputs) {
     const source = await readFile(resolve(root, path), 'utf8');
+    hashInput('hierarchy', path, source);
     const tree = xml.parse(source);
     const visit = (node: unknown): void => {
       if (!node || typeof node !== 'object') return;
@@ -178,5 +190,5 @@ export async function buildIndex(root: string, options: { hierarchyPaths?: strin
   }
   const order = (a: unknown, b: unknown) => JSON.stringify(a).localeCompare(JSON.stringify(b), 'en');
   resources.sort(order); semantics.sort(order); unsupported.sort(order);
-  return { version: 1, resources, semantics, hierarchyInputs, unsupported };
+  return { version: 1, indexerVersion: INDEXER_VERSION, inputHash: hash.digest('hex'), resources, semantics, hierarchyInputs, unsupported };
 }

@@ -116,6 +116,8 @@ Suppressions require a known rule ID, a nonempty reason, and a file or line scop
 
 Without `--flow`, lint scans YAML flows recursively under `maestroFlow.flowsDir` (default `e2e/maestro`). Diagnostics use project-relative paths. MF001 requires close matching resource copy or an explicit stale-copy annotation; MF002 means the selector was not found in resources or the hierarchy and may be dynamic content. Entered text, its constituent tokens, and interpolated variables are treated as runtime data.
 
+Lint refreshes `selectors.json` when it is missing, was created by a different indexer version, or its resource, source, or hierarchy inputs have changed. Refreshes are reported in the result evidence.
+
 | Rule | Severity | Meaning |
 | --- | --- | --- |
 | MF001 | error | Selector resembles changed resource copy |

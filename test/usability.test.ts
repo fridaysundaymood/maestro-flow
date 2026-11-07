@@ -15,7 +15,7 @@ afterEach(async () => {
 async function project() {
   const root = await mkdtemp(join(tmpdir(), 'maestro-usability-'));
   dirs.push(root);
-  await writeFile(join(root, 'selectors.json'), JSON.stringify({ version: 1, resources: [], semantics: [], hierarchyInputs: [], unsupported: [] }));
+  await executeOperation('index', { projectRoot: root });
   return root;
 }
 
@@ -58,6 +58,26 @@ describe('lint usability', () => {
     await writeFile(join(root, 'android-kit.yaml'), 'maestroFlow:\n  suppressions:\n    - ruleId: MF002\n      reason: dynamic\n      file: e2e/maestro/one.yaml\n');
     const result = await executeOperation('lint', { projectRoot: root });
     expect(result.evidence).toEqual([]);
+  });
+
+  it('refreshes missing, outdated, and changed resource indexes automatically', async () => {
+    const root = await project();
+    const resource = join(root, 'app/src/main/res/values/strings.xml');
+    await mkdir(join(resource, '..'), { recursive: true });
+    await writeFile(resource, '<resources><string name="label">Before</string></resources>');
+    await flow(root, 'e2e/maestro/one.yaml');
+    await executeOperation('index', { projectRoot: root });
+    await writeFile(resource, '<resources><string name="label">After</string></resources>');
+    await writeFile(join(root, 'e2e/maestro/one.yaml'), 'appId: example\n---\n- tapOn: After\n');
+    const changed = await executeOperation('lint', { projectRoot: root });
+    expect(changed.evidence).toContainEqual(expect.objectContaining({ kind: 'index-refresh', reason: 'inputs changed' }));
+    expect(changed.evidence).not.toContainEqual(expect.objectContaining({ selector: 'After' }));
+    await writeFile(join(root, 'selectors.json'), '{"version":1}');
+    const outdated = await executeOperation('lint', { projectRoot: root });
+    expect(outdated.evidence).toContainEqual(expect.objectContaining({ kind: 'index-refresh', reason: 'indexer version changed' }));
+    await rm(join(root, 'selectors.json'));
+    const missing = await executeOperation('lint', { projectRoot: root });
+    expect(missing.evidence).toContainEqual(expect.objectContaining({ kind: 'index-refresh', reason: 'missing or invalid' }));
   });
 
   it.each(['index', 'lint', 'generate', 'run', 'doctor'])('provides %s help without executing', async command => {
