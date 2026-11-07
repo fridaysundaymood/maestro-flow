@@ -2,7 +2,7 @@
 
 ## Status
 
-M1–M4 functionality is implemented. Unit tests and the fixture's offline stale-selector check pass. Generated EN and ID flows passed on an emu-lab leased emulator with Maestro 2.12.1.
+M1–M4 functionality is implemented. Unit tests and the fixture's offline stale-selector check pass. Generated EN and ID flows passed on an emu-lab leased emulator with Maestro 2.12.1. A device run classified the seeded stale selector, repaired the tap using hierarchy evidence, and passed without changing expectations.
 
 ## Problem and goal
 
