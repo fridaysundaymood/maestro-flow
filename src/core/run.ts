@@ -225,9 +225,11 @@ export async function runFlow(options: RunOptions): Promise<RunResult> {
       }
       // One unchanged rerun supplies evidence for timing; never claim timing from a single failure.
       if (attempt === 1 && kind === 'unknown') continue;
-      return finish('fail', kind === 'stale-selector' ? 'Stale selector detected; no safe automatic tap repair was available.' : 'Failure could not be classified from available evidence.', 'test');
+      return kind === 'stale-selector'
+        ? finish('fail', 'Stale selector detected; no safe automatic tap repair was available.', 'test')
+        : finish('fail', 'Failure could not be classified from available evidence.');
     }
-    return finish('fail', 'Iteration limit reached without resolving the flow.', 'test');
+    return finish('fail', 'Iteration limit reached without resolving the flow.');
   } catch {
     return finish('error', 'Device execution or artifact recording failed; device state was not restored.', 'environment');
   }

@@ -204,6 +204,15 @@ describe('device execution', () => {
     expect(result.status).toBe('blocked');
     expect(result.summary).toContain('not restored');
   });
+  it('leaves repeated failures without sufficient evidence unclassified', async () => {
+    const root = await project();
+    const { runner, calls } = commands([failed('unexplained failure'), failed('unexplained failure')], '');
+    const result = await runFlow({ projectRoot: root, flow: 'flow.yaml', serial: 'device', screenAnchor: 'Tasks', runner });
+    expect(result.status).toBe('fail');
+    expect(result).not.toHaveProperty('classification');
+    expect(result.summary).toBe('Failure could not be classified from available evidence.');
+    expect(calls.filter((call) => call.includes('test'))).toHaveLength(2);
+  });
   it('distinguishes missing evidence and navigation', () => {
     expect(classifyFailure({ output: '', screenAnchor: 'Tasks' })).toBe('unknown');
     expect(classifyFailure({ output: '', hierarchy, screenAnchor: 'Settings' })).toBe('navigation');
