@@ -90,6 +90,7 @@ describe('device execution', () => {
     let closed = false;
     class Scheduler {
       constructor(_options: { databasePath: string }) {}
+      async probe() { return { serial: 'emulator-5558', profile: 'fixture' }; }
       async withLease<T>(id: string, serial: string | undefined, callback: (serial: string, signal: AbortSignal) => Promise<T>): Promise<T> {
         expect(id).toBe('lease-1');
         expect(serial).toBeUndefined();
@@ -102,12 +103,53 @@ describe('device execution', () => {
     expect(calls.some((call) => call.includes('--device') && call.includes('emulator-5558'))).toBe(true);
     expect(closed).toBe(true);
   });
+  it.each([true, false])('reports quarantined lease with freed=%s without running the flow', async (freed) => {
+    const root = await project();
+    const { runner, calls } = commands([ok()]);
+    let closed = false;
+    class Scheduler {
+      constructor(_options: { databasePath: string }) {}
+      async probe(): Promise<{ serial: string; profile: string }> {
+        throw Object.assign(new Error('synthetic liveness failure'), { name: 'DeviceUnresponsiveError', freed });
+      }
+      async withLease<T>(_id: string, _serial: string | undefined, _callback: (serial: string, signal: AbortSignal) => Promise<T>): Promise<T> {
+        throw new Error('unexpected lease use');
+      }
+      close() { closed = true; }
+    }
+    const result = await runFlow({ projectRoot: root, flow: 'flow.yaml', emuLab: { databasePath: 'leases.db', leaseId: 'lease-1', packageName: 'dev.fixture' }, emuLabLoader: async () => ({ Scheduler }), runner });
+    expect(result).toMatchObject({ status: 'blocked', classification: 'environment' });
+    expect(result.evidence).toContainEqual({ kind: 'emu-lab-quarantine', reason: 'synthetic liveness failure', freed });
+    expect(calls).toHaveLength(0);
+    expect(closed).toBe(true);
+  });
+  it('reports quarantine detected after a failed flow and retains run evidence', async () => {
+    const root = await project();
+    const { runner } = commands([failed('unexplained'), failed('unexplained')]);
+    class Scheduler {
+      probes = 0;
+      constructor(_options: { databasePath: string }) {}
+      async probe() {
+        if (++this.probes === 2) throw Object.assign(new Error('lost during run'), { name: 'DeviceUnresponsiveError', freed: true });
+        return { serial: 'emulator-5558', profile: 'fixture' };
+      }
+      async withLease<T>(_id: string, _serial: string | undefined, callback: (serial: string, signal: AbortSignal) => Promise<T>): Promise<T> {
+        return callback('emulator-5558', new AbortController().signal);
+      }
+      close() {}
+    }
+    const result = await runFlow({ projectRoot: root, flow: 'flow.yaml', emuLab: { databasePath: 'leases.db', leaseId: 'lease-1', packageName: 'dev.fixture' }, emuLabLoader: async () => ({ Scheduler }), runner });
+    expect(result.evidence).toContainEqual({ kind: 'emu-lab-quarantine', reason: 'lost during run', freed: true });
+    expect(result.evidence).toContainEqual(expect.objectContaining({ kind: 'attempt' }));
+    expect(result.artifacts.some((path) => path.includes('attempt-1.log'))).toBe(true);
+  });
   it('loads the installed emu-lab scheduler and rejects an unknown lease', async () => {
     const root = await project();
     const { runner, calls } = commands([ok()]);
     const databasePath = join(root, 'leases.db');
     const result = await runFlow({ projectRoot: root, flow: 'flow.yaml', emuLab: { databasePath, leaseId: 'missing', packageName: 'dev.fixture' }, runner });
-    expect(result.status).toBe('error');
+    expect(result.status).toBe('blocked');
+    expect(result.evidence).toContainEqual(expect.objectContaining({ kind: 'emu-lab-lease-unavailable' }));
     expect(calls).toHaveLength(0);
     const db = new DatabaseSync(databasePath, { readOnly: true });
     try {

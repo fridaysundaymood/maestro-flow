@@ -7,6 +7,7 @@ import { createResult, runArtifactDir, writeArtifactIndex, type Result } from '@
 export interface CommandResult { code: number | null; stdout: string; stderr: string; interrupted?: boolean }
 export type CommandRunner = (command: string, args: string[], signal?: AbortSignal) => Promise<CommandResult>;
 interface EmuLabScheduler {
+  probe(leaseId: string, serial?: string): Promise<{ serial: string; profile: string }>;
   withLease<T>(leaseId: string, serial: string | undefined, callback: (serial: string, signal: AbortSignal) => Promise<T>): Promise<T>;
   close(): void;
 }
@@ -128,13 +129,32 @@ export async function runFlow(options: RunOptions): Promise<RunResult> {
       const packageName = '@android-kit/emu-lab';
       const emu = await (options.emuLabLoader ? options.emuLabLoader() : import(packageName) as Promise<EmuLabModule>);
       scheduler = new emu.Scheduler({ databasePath: resolve(root, databasePath) });
+      await scheduler.probe(leaseId, options.serial);
       const leased = await scheduler.withLease(leaseId, options.serial, async (serial, leaseSignal) => {
         const signal = options.signal ? AbortSignal.any([options.signal, leaseSignal]) : leaseSignal;
         return runFlow({ ...options, serial, signal, emuLab: undefined, emuLabLoader: undefined });
       });
+      if (leased.status !== 'pass' && leased.status !== 'flaky' && !options.signal?.aborted) {
+        evidence.push(...leased.evidence);
+        artifacts.push(...leased.artifacts);
+        await scheduler.probe(leaseId, options.serial);
+      }
       leased.evidence.push({ kind: 'emu-lab-lease', lease_id: leaseId });
       return leased;
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.name === 'DeviceUnresponsiveError' && 'freed' in error && typeof error.freed === 'boolean') {
+        evidence.push({ kind: 'emu-lab-quarantine', reason: error.message, freed: error.freed });
+        return result('blocked', 'The leased device failed liveness and was quarantined.', 'environment');
+      }
+      if (scheduler && error instanceof Error && [
+        'lease is not active or does not contain the requested device',
+        'lease does not authorize this device or ownership cannot be verified',
+        'lease does not authorize this device',
+        'lease released',
+      ].includes(error.message)) {
+        evidence.push({ kind: 'emu-lab-lease-unavailable', reason: error.message });
+        return result('blocked', 'The requested lease is unavailable or cannot be verified.', 'environment');
+      }
       return result(options.signal?.aborted ? 'blocked' : 'error', options.signal?.aborted ? 'Run interrupted; device state was not restored.' : 'Could not load emu-lab or authorize the requested lease.', 'environment');
     } finally {
       scheduler?.close();
