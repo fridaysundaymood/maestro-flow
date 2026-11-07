@@ -7,7 +7,7 @@ const step = z.object({ action: z.enum(['tap', 'input', 'hideKeyboard', 'scroll'
 const journey = z.object({ title: z.string(), anchor: selector, initialLocale: z.string().optional(), localePreconditions: z.record(z.string(), z.array(step)).optional(), preconditions: z.array(step).optional(), steps: z.array(step) });
 export const toolInputSchema = z.object({
   projectRoot: z.string().optional(), config: z.string().optional(), runId: z.string().optional(),
-  index: z.string().optional(), hierarchy: z.array(z.string()).optional(), flow: z.string().optional(),
+  index: z.string().optional(), hierarchy: z.array(z.string()).optional(), flow: z.string().optional(), flowsDir: z.string().optional(),
   locale: z.array(z.string()).optional(), appId: z.string().optional(), journey: z.union([z.string(), journey]).optional(),
   output: z.string().optional(), maestroVersion: z.string().optional(), serial: z.string().optional(), suite: z.boolean().optional(),
   screenAnchor: z.string().optional(), selectorRepair: z.object({ old: z.string(), replacement: z.string() }).optional(), maestro: z.string().optional(), adb: z.string().optional(),

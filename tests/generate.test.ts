@@ -37,10 +37,17 @@ describe('journey generation', () => {
     const [flow] = await generateFlows({ ...base, locales: ['en'], journey });
     expect(flow.yaml).toContain('- assertVisible: "^Total: .+$"');
   });
+  it('generates the same flow for Maestro 2.12.1', async () => {
+    const journey = { title: 'Boards', anchor: { key: 'boards' }, steps: [] };
+    const old = await generateFlows({ ...base, journey });
+    const current = await generateFlows({ ...base, journey, maestroVersion: '2.12.1' });
+    expect(current).toEqual(old);
+  });
+
 
   it('rejects unsupported versions, ambiguous resources, and unscoped numeric assertions', async () => {
     const journey = { title: 'Numeric', anchor: { key: 'boards' }, steps: [{ action: 'assertVisible' as const, selector: { text: '12' } }] };
-    await expect(generateFlows({ ...base, journey, maestroVersion: '2.0.0' })).rejects.toThrow('Unsupported Maestro version');
+    await expect(generateFlows({ ...base, journey, maestroVersion: '2.12.2' })).rejects.toThrow('Unsupported Maestro version');
     await expect(generateFlows({ ...base, journey })).rejects.toThrow('Numeric assertions');
     await expect(generateFlows({ ...base, journey: { ...journey, anchor: { key: 'missing' } } })).rejects.toThrow('unavailable');
   });
