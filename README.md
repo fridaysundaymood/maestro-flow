@@ -43,8 +43,14 @@ flowchart LR
     Generate --> Flow["Maestro YAML flow"]
     Flow --> Lint["lint"]
     Selectors --> Lint
-    Flow --> Run["run on device"]
-    Run --> Evidence["Run evidence and artifacts"]
+    Lint --> Review{"Diagnostics?"}
+    Review -->|Resolve using evidence| Flow
+    Review -->|Ready| Run["run on device"]
+    Flow --> Run
+    Run --> Outcome{"Result"}
+    Outcome -->|Pass or failure| Evidence["Run evidence and artifacts"]
+    Outcome -->|Evidenced stale tap; eligible repair| Repair["Replace unique tap selector"]
+    Repair --> Run
 ```
 
 The package root exports `toolDefinitions()` with JSON input schemas and async result-envelope handlers, plus `configSection`, `configSectionSchema`, `supportedSchemaMajors`, and `doctor()`. Importing it does not start the MCP server.
