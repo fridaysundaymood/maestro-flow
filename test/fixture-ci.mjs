@@ -1,10 +1,9 @@
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
 const fixture = resolve('../kit-fixture-app');
-const temporary = mkdtempSync(resolve(tmpdir(), 'maestro-fixture-'));
+const temporary = mkdtempSync(resolve(fixture, '.maestro-fixture-'));
 const index = resolve(temporary, 'selectors.json');
 const cli = resolve('dist/cli/index.js');
 try {
