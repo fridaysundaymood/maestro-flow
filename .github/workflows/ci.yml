@@ -26,13 +26,18 @@ jobs:
           repository: fridaysundaymood/kit-fixture-app
           path: kit-fixture-app
           ssh-key: ${{ secrets.DEPLOY_KEY_KIT_FIXTURE_APP }}
+      - uses: actions/checkout@v4
+        with:
+          repository: fridaysundaymood/emu-lab
+          path: emu-lab
+          ssh-key: ${{ secrets.DEPLOY_KEY_EMU_LAB }}
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - run: npm install
+      - run: npm ci --workspace=@android-kit/schema && npm run build --workspace=@android-kit/schema
         working-directory: android-kit
-      - run: npm run build --workspace @android-kit/schema
-        working-directory: android-kit
+      - run: npm ci && npm run build
+        working-directory: emu-lab
       - run: npm install
         working-directory: maestro-flow
       - run: npm run lint
