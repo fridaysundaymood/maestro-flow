@@ -31,6 +31,22 @@ The CLI operations are `index`, `lint`, `generate`, `run`, and `doctor`. Start t
 
 Every operation has a corresponding MCP tool: `maestro_flow_index`, `maestro_flow_generate`, `maestro_flow_lint`, `maestro_flow_run`, and `maestro_flow_doctor`. Use `--json` for the kit-schema v1 result envelope. Exit codes are 0 for pass, 1 for fail or flaky, and 2 for error, blocked, or unsupported. The [agent-neutral skill](skill/SKILL.md) describes the full iteration workflow.
 
+The workflow connects the selector index and structured journey to generated flows and device evidence:
+
+```mermaid
+flowchart LR
+    Resources["Android resources and semantics"] --> Index["index"]
+    Hierarchy["Hierarchy dumps (optional)"] --> Index
+    Index --> Selectors["selectors.json"]
+    Journey["Structured journey"] --> Generate["generate"]
+    Selectors --> Generate
+    Generate --> Flow["Maestro YAML flow"]
+    Flow --> Lint["lint"]
+    Selectors --> Lint
+    Flow --> Run["run on device"]
+    Run --> Evidence["Run evidence and artifacts"]
+```
+
 The package root exports `toolDefinitions()` with JSON input schemas and async result-envelope handlers, plus `configSection`, `configSectionSchema`, `supportedSchemaMajors`, and `doctor()`. Importing it does not start the MCP server.
 
 ### CLI quickstart
