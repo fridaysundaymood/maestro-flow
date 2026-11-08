@@ -1,8 +1,9 @@
 import { access, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { createResult, loadConfig, newRunId, runArtifactDir, writeArtifactIndex, type Result } from '@android-kit/schema';
+import { createResult, loadConfig, newRunId, runArtifactDir, writeArtifactIndex, type Result } from '@budaknyenyel/kit-schema';
 import { buildIndex, type ResourceIndex } from './indexer.js';
 import { lintFlow } from './lint.js';
 import { generateFlows, type Journey } from './generate.js';
@@ -13,12 +14,12 @@ export interface OperationInput {
   projectRoot?: string; config?: string; runId?: string; index?: string; hierarchy?: string[];
   flow?: string; flowsDir?: string; locale?: string[]; appId?: string; journey?: string | Journey; output?: string;
   maestroVersion?: string; serial?: string; suite?: boolean; screenAnchor?: string;
-  selectorRepair?: { old: string; replacement: string }; maestro?: string; adb?: string; signal?: AbortSignal;
+  selectorRepair?: { old: string; replacement: string }; signal?: AbortSignal;
   emuLab?: { databasePath: string; leaseId: string; packageName: string };
 }
 interface Config {
   index?: string; hierarchy?: string[]; flow?: string; flowsDir?: string; locale?: string[]; appId?: string;
-  output?: string; maestroVersion?: string; serial?: string; rootScreens?: string[];
+  output?: string; maestroVersion?: string; serial?: string; rootScreens?: string[]; maestro?: string; adb?: string;
   emuLab?: { databasePath: string; leaseId: string; packageName: string };
   suppressions?: { ruleId: string; reason: string; file?: string; line?: number }[];
 }
@@ -28,6 +29,7 @@ export const maestroFlowSchema = {
   properties: {
     index: { type: 'string' }, hierarchy: stringArray, flow: { type: 'string' }, flowsDir: { type: 'string' }, locale: stringArray,
     appId: { type: 'string' }, output: { type: 'string' }, maestroVersion: { type: 'string' },
+    maestro: { type: 'string' }, adb: { type: 'string' },
     serial: { type: 'string' }, rootScreens: stringArray,
     emuLab: { type: 'object', additionalProperties: false, required: ['databasePath', 'leaseId', 'packageName'],
       properties: { databasePath: { type: 'string', minLength: 1 }, leaseId: { type: 'string', minLength: 1 }, packageName: { type: 'string', minLength: 1 } } },
@@ -36,7 +38,35 @@ export const maestroFlowSchema = {
   },
 };
 const exec = promisify(execFile);
-const resolvePath = (root: string, path: string) => isAbsolute(path) ? path : resolve(root, path);
+const resolvePath = (root: string, path: string): string => {
+  const target = resolve(root, path);
+  const inside = (base: string, candidate: string) => {
+    const rel = relative(base, candidate);
+    return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`));
+  };
+  if (!inside(root, target)) throw new Error(`Path must be inside project root: ${path}`);
+  let existing = target;
+  while (true) {
+    try { existing = realpathSync(existing); break; }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      const parent = dirname(existing);
+      if (parent === existing) throw error;
+      existing = parent;
+    }
+  }
+  if (!inside(realpathSync(root), existing)) throw new Error(`Path must be inside project root: ${path}`);
+  return target;
+};
+async function writeIndex(path: string, content: string): Promise<void> {
+  try {
+    const existing = JSON.parse(await readFile(path, 'utf8')) as Partial<ResourceIndex>;
+    if (existing.version !== 1 || !Array.isArray(existing.resources) || !Array.isArray(existing.semantics) || !Array.isArray(existing.hierarchyInputs) || !Array.isArray(existing.unsupported)) throw new Error('Refusing to overwrite a file that is not a maestro-flow index');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  await atomicWrite(path, content);
+}
 async function atomicWrite(path: string, content: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const temporary = `${path}.${newRunId()}.tmp`;
@@ -74,6 +104,7 @@ async function performOperation(operation: Operation, input: OperationInput = {}
   const result = (status: Result['status'], summary: string, evidence: unknown[] = [], artifacts: string[] = [], classification?: Result['classification']) =>
     createResult({ tool: 'maestro-flow', operation, run_id: runId, status, summary, evidence, artifacts, startedAt, ...(classification ? { classification } : {}) });
   try {
+    resolvePath(root, runArtifactDir(root, runId, 'maestro-flow'));
     const configPath = resolvePath(root, input.config ?? 'android-kit.yaml');
     let config: Config = {};
     try { await access(configPath); config = await loadConfig<Config>(configPath, { name: 'maestroFlow', schema: maestroFlowSchema }) ?? {}; }
@@ -81,7 +112,7 @@ async function performOperation(operation: Operation, input: OperationInput = {}
     const indexPath = resolvePath(root, input.index ?? config.index ?? 'selectors.json');
     if (operation === 'index') {
       const index = await buildIndex(root, { hierarchyPaths: (input.hierarchy ?? config.hierarchy)?.map(path => resolvePath(root, path)) });
-      await atomicWrite(indexPath, JSON.stringify(index, null, 2) + '\n');
+      await writeIndex(indexPath, JSON.stringify(index, null, 2) + '\n');
       return result(index.unsupported.length ? 'unsupported' : 'pass', index.unsupported.length ? 'Index contains unsupported resource formats' : 'Resource index created', [...index.unsupported, { output: indexPath }]);
     }
     if (operation === 'lint') {
@@ -97,7 +128,7 @@ async function performOperation(operation: Operation, input: OperationInput = {}
       const current = await buildIndex(root, { hierarchyPaths });
       const refreshed = !previous || previous.indexerVersion !== current.indexerVersion || previous.inputHash !== current.inputHash;
       const index = refreshed ? current : previous ?? current;
-      if (refreshed) await atomicWrite(indexPath, JSON.stringify(index, null, 2) + '\n');
+      if (refreshed) await writeIndex(indexPath, JSON.stringify(index, null, 2) + '\n');
       const diagnostics: unknown[] = refreshed ? [{ kind: 'index-refresh', reason: !previous ? 'missing or invalid' : previous.indexerVersion !== current.indexerVersion ? 'indexer version changed' : 'inputs changed' }] : [];
       let passed = true;
       for (const flow of flows) {
@@ -123,7 +154,7 @@ async function performOperation(operation: Operation, input: OperationInput = {}
       try {
         for (const flow of generated) {
           if (!/^[A-Za-z0-9_-]+$/.test(flow.locale)) throw new Error(`Invalid locale: ${flow.locale}`);
-          const path = generated.length === 1 ? output : output.replace(/(\.ya?ml)?$/i, `-${flow.locale}$1`);
+          const path = resolvePath(root, generated.length === 1 ? output : output.replace(/(\.ya?ml)?$/i, `-${flow.locale}$1`));
           await mkdir(dirname(path), { recursive: true });
           await writeFile(path, flow.yaml, { flag: 'wx' });
           paths.push(path);
@@ -136,10 +167,10 @@ async function performOperation(operation: Operation, input: OperationInput = {}
     }
     if (operation === 'run') {
       const emuLab = input.emuLab ?? config.emuLab;
-      return await runFlow({ flow: resolvePath(root, required(input.flow ?? config.flow, 'flow')), serial: emuLab ? input.serial ?? config.serial : required(input.serial ?? config.serial, 'serial'), projectRoot: root, runId, suite: input.suite, screenAnchor: input.screenAnchor, selectorRepair: input.selectorRepair, maestro: input.maestro, adb: input.adb, signal: input.signal, emuLab: emuLab && { ...emuLab, databasePath: resolvePath(root, emuLab.databasePath) } });
+      return await runFlow({ flow: resolvePath(root, required(input.flow ?? config.flow, 'flow')), serial: emuLab ? input.serial ?? config.serial : required(input.serial ?? config.serial, 'serial'), projectRoot: root, runId, suite: input.suite, screenAnchor: input.screenAnchor, selectorRepair: input.selectorRepair, maestro: config.maestro, adb: config.adb, signal: input.signal, emuLab: emuLab && { ...emuLab, databasePath: resolvePath(root, emuLab.databasePath) } });
     }
     if (operation === 'doctor') {
-      const checks = await Promise.all([version('java', ['-version']), version(input.adb ?? 'adb', ['version']), version(input.maestro ?? 'maestro', ['--version'])]);
+      const checks = await Promise.all([version('java', ['-version']), version(config.adb ?? 'adb', ['version']), version(config.maestro ?? 'maestro', ['--version'])]);
       const maestro = checks[2];
       const supported = !!maestro.version && supportedMaestroVersion(maestro.version);
       if (!checks.every(check => check.available)) return result('blocked', 'Missing prerequisites', checks, [], 'environment');
@@ -159,6 +190,7 @@ export async function executeOperation(operation: Operation, input: OperationInp
   const outcome = await performOperation(operation, { ...input, runId });
   if (operation === 'run' && outcome.artifacts.length) return outcome;
   try {
+    resolvePath(root, runArtifactDir(root, runId, 'maestro-flow'));
     const directory = runArtifactDir(root, runId, 'maestro-flow');
     const report = join(directory, `${operation}-result.json`);
     await atomicWrite(report, JSON.stringify({ operation, status: outcome.status, summary: outcome.summary, evidence: outcome.evidence }, null, 2) + '\n');

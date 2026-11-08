@@ -1,6 +1,12 @@
 {
-  "name": "maestro-flow",
+  "name": "@budaknyenyel/maestro-flow",
   "version": "0.1.0",
+  "description": "Generate, lint and run Maestro flows with Android resource and device evidence",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/fridaysundaymood/maestro-flow.git" },
+  "homepage": "https://github.com/fridaysundaymood/maestro-flow#readme",
+  "bugs": { "url": "https://github.com/fridaysundaymood/maestro-flow/issues" },
+  "publishConfig": { "access": "public" },
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -20,17 +26,21 @@
   "files": [
     "dist",
     "skill",
-    "AGENTS.md"
+    "AGENTS.md",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "biome check .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepare-publish": "node scripts/prepare-publish.mjs",
+    "prepublishOnly": "npm run build"
   },
-  "bundleDependencies": ["@android-kit/emu-lab", "@android-kit/schema"],
   "dependencies": {
-    "@android-kit/emu-lab": "file:../emu-lab",
-    "@android-kit/schema": "file:../android-kit/packages/kit-schema",
+    "@budaknyenyel/emu-lab": "file:../emu-lab",
+    "@budaknyenyel/kit-schema": "file:../android-kit/packages/kit-schema",
     "@modelcontextprotocol/sdk": "^1.25.0",
     "ajv": "^8.17.1",
     "fast-xml-parser": "^5.3.0",

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Publish as `@budaknyenyel/maestro-flow` with scoped registry dependencies staged separately from local development manifests.
+- Confine project paths, protect existing non-index files, bound selector regex evaluation, and configure executable paths only through trusted configuration.
+- Fix npm symlink entry points and the MCP launch instructions and version.
+
 - Leave unexplained flow failures unclassified rather than attributing them to tests.
 - Probe leased devices before runs and report quarantine evidence for safe suite recovery.
 - Declare and bundle emu-lab for lease-backed runs, and verify scheduler loading with a synthetic lease database.

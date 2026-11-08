@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { Worker } from 'node:worker_threads';
 import { isMap, isNode, isScalar, isSeq, LineCounter, parseAllDocuments } from 'yaml';
 import type { ResourceIndex } from './indexer.js';
 import { supportedMaestroVersion } from './run.js';
@@ -31,6 +32,20 @@ function distance(a: string, b: string): number {
   }
   return previous[b.length];
 }
+async function matchesSelector(value: string, candidates: string[], patterns: string[]): Promise<boolean> {
+  const { promise, resolve } = Promise.withResolvers<boolean>();
+  const worker = new Worker(`
+    const { parentPort, workerData } = require('node:worker_threads');
+    try {
+      const regex = new RegExp('^(?:' + workerData.value + ')$');
+      parentPort.postMessage(workerData.patterns.some(pattern => new RegExp(pattern).test(workerData.value)) || workerData.candidates.some(candidate => regex.test(candidate)));
+    } catch { parentPort.postMessage(false); }
+  `, { eval: true, workerData: { value, candidates, patterns } });
+  const timer = setTimeout(() => { void worker.terminate(); resolve(false); }, 250);
+  worker.once('message', (matched: boolean) => { clearTimeout(timer); void worker.terminate(); resolve(matched); });
+  worker.once('error', () => { clearTimeout(timer); resolve(false); });
+  return promise;
+}
 
 export async function lintFlow(file: string, index: ResourceIndex, options: LintOptions = {}): Promise<LintResult> {
   if (options.maestroVersion && !supportedMaestroVersion(options.maestroVersion)) throw new Error(`Unsupported Maestro version: ${options.maestroVersion}; expected >=1.39.0 <=2.12.1`);
@@ -43,13 +58,13 @@ export async function lintFlow(file: string, index: ResourceIndex, options: Lint
   const emit = (ruleId: keyof typeof RULES, message: string, line: number, selector?: string) => diagnostics.push({ ruleId, severity: RULES[ruleId].severity, message, file, line, ...(selector === undefined ? {} : { selector }) });
   const values = index.resources.filter(entry => !options.locale || entry.locale === options.locale || entry.locale === 'default');
   const literals = new Set([...values.filter(entry => !entry.regex).map(entry => entry.value), ...index.semantics.flatMap(entry => entry.value === undefined ? [] : [entry.value])]);
-  const patterns = values.flatMap(entry => entry.regex ? [new RegExp(entry.regex)] : []);
+  const patterns = values.flatMap(entry => entry.regex ? [entry.regex] : []);
   const entered = new Set<string>();
   const suppressions = options.suppressions ?? [];
   let launched = false, anchor = false, currentScreen: string | undefined;
   const lineOf = (node: unknown) => counter.linePos(isNode(node) ? node.range?.[0] ?? 0 : 0).line;
   const scalar = (node: unknown): string | undefined => isScalar(node) && typeof node.value === 'string' ? node.value : undefined;
-  const checkSelector = (value: string, line: number, assertion: boolean) => {
+  const checkSelector = async (value: string, line: number, assertion: boolean) => {
     if (assertion && /^[-+]?\d+(?:[.,]\d+)?$/.test(value)) {
       emit('MF004', 'Bare numeric assertion may match dynamic content; scope it or use a complete label', line, value);
       return;
@@ -59,13 +74,12 @@ export async function lintFlow(file: string, index: ResourceIndex, options: Lint
       const inputTokens = new Set(input.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
       return tokens.every(token => inputTokens.has(token));
     }))) return;
-    let selector: RegExp | undefined;
-    try { selector = new RegExp(`^(?:${value})$`); } catch { /* Unknown selectors remain diagnostics. */ }
+    if (value.length > 256) { emit('MF002', 'Selector exceeds the regex length limit', line, value); return; }
     const samples = values.flatMap(entry => {
       if (!entry.regex) return [entry.value];
       return ['1', '12', 'value'].map(sample => entry.value.replace(/%%|%(?:[1-9]\d*\$)?[sdif]/g, token => token === '%%' ? '%' : sample));
     });
-    if (literals.has(value) || patterns.some(pattern => pattern.test(value)) || (selector && [...literals, ...samples, ...entered].some(candidate => selector.test(candidate)))) return;
+    if (literals.has(value) || await matchesSelector(value, [...literals, ...samples, ...entered], patterns)) return;
     // Numeric patterns select runtime values rather than fixed resource copy.
     if (/(?:\\[dD]|\[[^\]]*\d[^\]]*\])/.test(value)) return;
     if (/[\\[\]().*+?{}|^$]/.test(value)) {
@@ -109,12 +123,12 @@ export async function lintFlow(file: string, index: ResourceIndex, options: Lint
       if (name === 'tapOn' && isMap(pair.value) && pair.value.items.some(item => scalar(item.key) === 'point')) emit('MF006', 'Coordinate tap bypasses accessibility semantics', line);
       if (['tapOn', 'assertVisible', 'assertNotVisible'].includes(name)) {
         const value = selectorFrom(pair.value);
-        if (value !== undefined) { checkSelector(value, line, name.startsWith('assert')); if (options.rootScreens?.includes(value)) currentScreen = value; }
+        if (value !== undefined) { await checkSelector(value, line, name.startsWith('assert')); if (options.rootScreens?.includes(value)) currentScreen = value; }
       }
       if (name === 'extendedWaitUntil' && isMap(pair.value)) for (const item of pair.value.items) {
         if (['visible', 'notVisible'].includes(scalar(item.key) ?? '')) {
           const value = selectorFrom(item.value);
-          if (value !== undefined) { checkSelector(value, lineOf(item.key), false); if (options.rootScreens?.includes(value)) currentScreen = value; }
+          if (value !== undefined) { await checkSelector(value, lineOf(item.key), false); if (options.rootScreens?.includes(value)) currentScreen = value; }
         }
       }
     }

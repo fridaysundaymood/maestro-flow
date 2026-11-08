@@ -44,8 +44,8 @@ describe('lint usability', () => {
     await flow(root, 'override/two.yaml');
     await writeFile(join(root, 'android-kit.yaml'), 'maestroFlow:\n  flowsDir: custom\n');
     const configured = await executeOperation('lint', { projectRoot: root });
-    const tool = toolDefinitions().find(item => item.name === 'maestro_flow_lint')!;
-    const overridden = await tool.handler({ projectRoot: root, flowsDir: 'override' });
+    const tool = toolDefinitions({ projectRoot: root }).find(item => item.name === 'maestro_flow_lint')!;
+    const overridden = await tool.handler({ flowsDir: 'override' });
     const selected = await executeOperation('lint', { projectRoot: root, flow: 'custom/one.yaml', flowsDir: 'override' });
     expect(configured.evidence).toEqual([expect.objectContaining({ file: 'custom/one.yaml' })]);
     expect(overridden.evidence).toEqual([expect.objectContaining({ file: 'override/two.yaml' })]);
@@ -72,7 +72,7 @@ describe('lint usability', () => {
     const changed = await executeOperation('lint', { projectRoot: root });
     expect(changed.evidence).toContainEqual(expect.objectContaining({ kind: 'index-refresh', reason: 'inputs changed' }));
     expect(changed.evidence).not.toContainEqual(expect.objectContaining({ selector: 'After' }));
-    await writeFile(join(root, 'selectors.json'), '{"version":1}');
+    await writeFile(join(root, 'selectors.json'), JSON.stringify({ version: 1, resources: [], semantics: [], hierarchyInputs: [], unsupported: [] }));
     const outdated = await executeOperation('lint', { projectRoot: root });
     expect(outdated.evidence).toContainEqual(expect.objectContaining({ kind: 'index-refresh', reason: 'indexer version changed' }));
     await rm(join(root, 'selectors.json'));

@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { createResult, runArtifactDir, writeArtifactIndex, type Result } from '@android-kit/schema';
+import { createResult, runArtifactDir, writeArtifactIndex, type Result } from '@budaknyenyel/kit-schema';
 
 export interface CommandResult { code: number | null; stdout: string; stderr: string; interrupted?: boolean }
 export type CommandRunner = (command: string, args: string[], signal?: AbortSignal) => Promise<CommandResult>;
@@ -126,7 +126,7 @@ export async function runFlow(options: RunOptions): Promise<RunResult> {
     let scheduler: EmuLabScheduler | undefined;
     try {
       // Optional integration is resolved only when a lease is requested.
-      const packageName = '@android-kit/emu-lab';
+      const packageName = '@budaknyenyel/emu-lab';
       const emu = await (options.emuLabLoader ? options.emuLabLoader() : import(packageName) as Promise<EmuLabModule>);
       scheduler = new emu.Scheduler({ databasePath: resolve(root, databasePath) });
       await scheduler.probe(leaseId, options.serial);
